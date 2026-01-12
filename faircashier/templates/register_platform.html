@@ -1,0 +1,549 @@
+{% extends 'base.html' %}
+
+{% block title %}Register Platform - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="register-platform-page">
+    <div class="page-header">
+        <a href="{% url 'admin-dashboard' %}" class="back-link">← Back to Dashboard</a>
+        <h1>Register New Platform</h1>
+        <p class="subtitle">Connect your e-commerce platform to Fair Cashier</p>
+    </div>
+
+    <div class="platform-container">
+        <!-- Registration Form -->
+        <div class="form-section">
+            <div class="card">
+                <h2>Platform Information</h2>
+                <p class="form-intro">Fill in the details of your e-commerce platform to integrate with Fair Cashier's payment system.</p>
+
+                <form method="POST" action="{% url 'register_platform' %}" onsubmit="return handlePlatformSubmit(event)">
+                    {% csrf_token %}
+
+                    <!-- Platform Name -->
+                    <div class="form-group">
+                        <label for="platform_name">Platform Name <span class="required">*</span></label>
+                        <input 
+                            type="text" 
+                            name="platform_name" 
+                            id="platform_name" 
+                            class="form-control" 
+                            placeholder="My E-commerce Store"
+                            required
+                            maxlength="255"
+                        >
+                        <small class="form-text">The name of your e-commerce platform or marketplace</small>
+                    </div>
+
+                    <!-- Domain -->
+                    <div class="form-group">
+                        <label for="domain">Platform Domain <span class="required">*</span></label>
+                        <input 
+                            type="url" 
+                            name="domain" 
+                            id="domain" 
+                            class="form-control" 
+                            placeholder="https://mystore.com"
+                            required
+                            pattern="https?://.+"
+                        >
+                        <small class="form-text">Your platform's main URL (include https://)</small>
+                    </div>
+
+                    <!-- Return URL -->
+                    <div class="form-group">
+                        <label for="return_url">Return URL <span class="required">*</span></label>
+                        <input 
+                            type="url" 
+                            name="return_url" 
+                            id="return_url" 
+                            class="form-control" 
+                            placeholder="https://mystore.com/payment/success"
+                            required
+                        >
+                        <small class="form-text">URL to redirect users after payment completion</small>
+                    </div>
+
+                    <!-- Callback URL -->
+                    <div class="form-group">
+                        <label for="callback_url">Callback/Webhook URL <span class="required">*</span></label>
+                        <input 
+                            type="url" 
+                            name="callback_url" 
+                            id="callback_url" 
+                            class="form-control" 
+                            placeholder="https://mystore.com/api/payment/callback"
+                            required
+                        >
+                        <small class="form-text">URL to receive payment notifications (webhook endpoint)</small>
+                    </div>
+
+                    <div class="section-divider">
+                        <h3>Mobile Money Configuration</h3>
+                        <p>Configure your mobile money API credentials for processing payments</p>
+                    </div>
+
+                    <!-- Mobile Money Provider -->
+                    <div class="form-group">
+                        <label for="mobile_money_provider">Mobile Money Provider <span class="required">*</span></label>
+                        <select name="mobile_money_provider" id="mobile_money_provider" class="form-control" required>
+                            <option value="">-- Select Provider --</option>
+                            <option value="mtn">MTN Mobile Money</option>
+                            <option value="airtel">Airtel Money</option>
+                            <option value="other">Other</option>
+                        </select>
+                        <small class="form-text">Your mobile money service provider</small>
+                    </div>
+
+                    <!-- Mobile Money API Key -->
+                    <div class="form-group">
+                        <label for="mobile_money_api_key">Mobile Money API Key <span class="required">*</span></label>
+                        <div class="input-group">
+                            <input 
+                                type="password" 
+                                name="mobile_money_api_key" 
+                                id="mobile_money_api_key" 
+                                class="form-control" 
+                                placeholder="Enter your API key"
+                                required
+                            >
+                            <button type="button" class="toggle-password" onclick="togglePasswordVisibility('mobile_money_api_key')">
+                                <span id="toggleIcon">👁️</span>
+                            </button>
+                        </div>
+                        <small class="form-text">Your mobile money API key (will be encrypted and stored securely)</small>
+                    </div>
+
+                    <!-- Terms Agreement -->
+                    <div class="form-check-box">
+                        <input type="checkbox" id="terms" required>
+                        <label for="terms">
+                            I confirm that:
+                            <ul>
+                                <li>The information provided is accurate</li>
+                                <li>I have the authority to register this platform</li>
+                                <li>I have read and agree to Fair Cashier's <a href="#" target="_blank">Terms of Service</a></li>
+                                <li>I understand the API key will be used for payment processing</li>
+                            </ul>
+                        </label>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" class="btn btn-primary btn-block btn-lg">
+                        <span class="btn-icon">🔗</span> Register Platform
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Information Section -->
+        <div class="info-section">
+            <!-- Benefits -->
+            <div class="card benefits-card">
+                <h3>Why Integrate?</h3>
+                <div class="benefit-item">
+                    <span class="benefit-icon">⚡</span>
+                    <div>
+                        <strong>Instant Payments</strong>
+                        <p>Process payments in real-time</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">🔒</span>
+                    <div>
+                        <strong>Secure Transactions</strong>
+                        <p>Bank-level security for all payments</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">💳</span>
+                    <div>
+                        <strong>Multiple Vendors</strong>
+                        <p>Support multi-vendor marketplaces</p>
+                    </div>
+                </div>
+                <div class="benefit-item">
+                    <span class="benefit-icon">🛡️</span>
+                    <div>
+                        <strong>Buyer Protection</strong>
+                        <p>Built-in dispute resolution</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integration Steps -->
+            <div class="card">
+                <h3>After Registration</h3>
+                <div class="steps-list">
+                    <div class="step-item">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <strong>Get API Key</strong>
+                            <p>Receive your unique API key</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <strong>Integrate API</strong>
+                            <p>Add payment requests to your checkout</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <strong>Test Payments</strong>
+                            <p>Test in sandbox mode</p>
+                        </div>
+                    </div>
+                    <div class="step-item">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <strong>Go Live</strong>
+                            <p>Start accepting real payments</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Requirements -->
+            <div class="card requirements-card">
+                <h3>Requirements</h3>
+                <ul class="requirements-list">
+                    <li>✅ Valid e-commerce platform</li>
+                    <li>✅ HTTPS-enabled domain</li>
+                    <li>✅ Mobile money API credentials</li>
+                    <li>✅ Webhook endpoint</li>
+                    <li>✅ Basic API integration knowledge</li>
+                </ul>
+            </div>
+
+            <!-- Support -->
+            <div class="card">
+                <h3>Need Help?</h3>
+                <p>Our integration team is here to help you get started.</p>
+                <div class="support-links">
+                    <a href="#" class="support-link">
+                        <span>📚</span> API Documentation
+                    </a>
+                    <a href="#" class="support-link">
+                        <span>💬</span> Contact Support
+                    </a>
+                    <a href="#" class="support-link">
+                        <span>🎥</span> Video Tutorials
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .register-platform-page {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .page-header {
+        margin-bottom: 30px;
+    }
+    
+    .back-link {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: bold;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    
+    .page-header h1 {
+        font-size: 2.5em;
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    
+    .subtitle {
+        color: #666;
+        font-size: 1.1em;
+    }
+    
+    .platform-container {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+    }
+    
+    .form-intro {
+        color: #666;
+        margin-bottom: 25px;
+        line-height: 1.6;
+    }
+    
+    .required {
+        color: #dc3545;
+    }
+    
+    .input-group {
+        display: flex;
+        gap: 0;
+    }
+    
+    .input-group .form-control {
+        border-top-right-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+    
+    .toggle-password {
+        padding: 10px 15px;
+        background: #f8f9fa;
+        border: 1px solid #ddd;
+        border-left: none;
+        border-top-right-radius: 5px;
+        border-bottom-right-radius: 5px;
+        cursor: pointer;
+        font-size: 1.2em;
+    }
+    
+    .toggle-password:hover {
+        background: #e9ecef;
+    }
+    
+    .section-divider {
+        margin: 30px 0 20px 0;
+        padding-top: 30px;
+        border-top: 2px solid #dee2e6;
+    }
+    
+    .section-divider h3 {
+        color: #333;
+        margin-bottom: 5px;
+    }
+    
+    .section-divider p {
+        color: #666;
+        margin: 0;
+        font-size: 0.95em;
+    }
+    
+    .form-check-box {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+    }
+    
+    .form-check-box input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        cursor: pointer;
+        vertical-align: top;
+        margin-top: 2px;
+    }
+    
+    .form-check-box label {
+        cursor: pointer;
+        display: inline-block;
+        width: calc(100% - 30px);
+    }
+    
+    .form-check-box ul {
+        margin: 10px 0 0 20px;
+        padding: 0;
+    }
+    
+    .form-check-box li {
+        margin-bottom: 5px;
+    }
+    
+    .form-check-box a {
+        color: #667eea;
+        text-decoration: underline;
+    }
+    
+    .benefits-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    
+    .benefits-card h3 {
+        color: white;
+        margin-bottom: 20px;
+    }
+    
+    .benefit-item {
+        display: flex;
+        gap: 15px;
+        padding: 15px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+    
+    .benefit-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .benefit-icon {
+        font-size: 2em;
+        flex-shrink: 0;
+    }
+    
+    .benefit-item strong {
+        display: block;
+        margin-bottom: 3px;
+    }
+    
+    .benefit-item p {
+        margin: 0;
+        opacity: 0.9;
+        font-size: 0.9em;
+    }
+    
+    .steps-list {
+        margin-top: 20px;
+    }
+    
+    .step-item {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .step-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .step-number {
+        width: 35px;
+        height: 35px;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        flex-shrink: 0;
+    }
+    
+    .step-content strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
+    .step-content p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .requirements-card {
+        background: #e7f3ff;
+        border: 1px solid #b3d9ff;
+    }
+    
+    .requirements-card h3 {
+        color: #0056b3;
+    }
+    
+    .requirements-list {
+        list-style: none;
+        padding: 0;
+        margin: 15px 0 0 0;
+    }
+    
+    .requirements-list li {
+        padding: 8px 0;
+        color: #0056b3;
+    }
+    
+    .support-links {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 15px;
+    }
+    
+    .support-link {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 5px;
+        text-decoration: none;
+        color: #333;
+        transition: all 0.3s;
+    }
+    
+    .support-link:hover {
+        background: #667eea;
+        color: white;
+    }
+    
+    .support-link span {
+        font-size: 1.5em;
+    }
+    
+    @media (max-width: 968px) {
+        .platform-container {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function togglePasswordVisibility(fieldId) {
+        const field = document.getElementById(fieldId);
+        const icon = document.getElementById('toggleIcon');
+        
+        if (field.type === 'password') {
+            field.type = 'text';
+            icon.textContent = '🙈';
+        } else {
+            field.type = 'password';
+            icon.textContent = '👁️';
+        }
+    }
+    
+    function handlePlatformSubmit(event) {
+        event.preventDefault();
+        const form = event.target;
+        
+        // Validate URLs
+        const domain = form.domain.value;
+        const returnUrl = form.return_url.value;
+        const callbackUrl = form.callback_url.value;
+        
+        if (!domain.startsWith('https://') && !domain.startsWith('http://')) {
+            showNotification('Domain must start with https:// or http://', 'error');
+            return false;
+        }
+        
+        if (!returnUrl.startsWith('https://') && !returnUrl.startsWith('http://')) {
+            showNotification('Return URL must start with https:// or http://', 'error');
+            return false;
+        }
+        
+        if (!callbackUrl.startsWith('https://') && !callbackUrl.startsWith('http://')) {
+            showNotification('Callback URL must start with https:// or http://', 'error');
+            return false;
+        }
+        
+        if (!confirm('Please confirm that all information is correct. You will receive an API key that should be kept secure.')) {
+            return false;
+        }
+        
+        // Submit via AJAX
+        registerPlatform(event);
+        return false;
+    }
+</script>
+{% endblock %}

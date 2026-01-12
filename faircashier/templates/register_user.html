@@ -1,0 +1,76 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - Fair Cashier</title>
+  <link rel="stylesheet" href="{% static 'css/register_user.css' %}">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="registration-container">
+    <h1>Create Your Account</h1>
+    <p>Join Fair Cashier to start managing your points seamlessly.</p>
+
+    <!-- Registration Form -->
+    <form id="registrationForm" method="post" action="{% url 'register_user' %}">
+      {% csrf_token %}
+
+      <!-- Email Field -->
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" placeholder="Enter your email" required>
+        <span class="error-message" id="emailError"></span>
+      </div>
+
+      <!-- Password Field -->
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter your password" required>
+        <span class="error-message" id="passwordError"></span>
+        <div class="password-instructions">
+          <p>Password must contain:</p>
+          <ul>
+            <li id="length">At least 8 characters</li>
+            <li id="uppercase">One uppercase letter</li>
+            <li id="lowercase">One lowercase letter</li>
+            <li id="digit">One digit</li>
+            <li id="special">One special character</li>
+          </ul>
+        </div>
+      </div>
+      <!-- Role Selection -->
+      <div class="form-group">
+        <label for="role">Register As</label>
+        <select id="role" name="role" required>
+          <option value="" disabled selected>Select your role</option>
+          <option value="buyer">Buyer</option>
+          <option value="seller">Seller</option>
+        </select>
+        <span class="error-message" id="roleError"></span>
+      </div>
+
+
+      <!-- Register As Admin Checkbox -->
+      <div class="form-group">
+        <label for="register_as_admin" class="checkbox-label">
+          <input type="checkbox" id="register_as_admin" name="register_as_admin">
+          Register As Admin
+        </label>
+      </div>
+
+      <!-- Submit Button -->
+      <button type="submit" class="btn">Register</button>
+    </form>
+
+    <!-- Messages Section -->
+    <div id="messageBox" class="message-box"></div>
+    <!-- Link to login Page -->
+    <p class="login-link">Already have an account? <a href="{% url 'login_user' %}">Login here</a>. <br> OR Return <a href="{% url 'home' %}">
+      &#8592; Home</a></p>
+  </div>
+
+  <script src="{% static 'js/register_user.js' %}"></script>
+</body>
+</html>

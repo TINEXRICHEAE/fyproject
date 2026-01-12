@@ -1,0 +1,431 @@
+{% extends 'base.html' %}
+
+{% block title %}Payment Confirmation - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="payment-page">
+    <div class="payment-container">
+        <!-- Payment Header -->
+        <div class="payment-header">
+            <div class="merchant-info">
+                <h2>{{ payment_request.platform.platform_name }}</h2>
+                <p>Secure payment powered by Fair Cashier</p>
+            </div>
+            <div class="security-badge">
+                <span class="security-icon">🔒</span>
+                <span>Secure Payment</span>
+            </div>
+        </div>
+
+        <!-- Payment Details Card -->
+        <div class="card payment-details-card">
+            <h3>Payment Summary</h3>
+            
+            <!-- Items List -->
+            <div class="items-list">
+                {% for item in items %}
+                <div class="payment-item">
+                    <div class="item-info">
+                        <div class="seller-badge">
+                            <span class="seller-icon">👤</span>
+                            <span class="seller-name">{{ item.seller_email }}</span>
+                        </div>
+                        {% if item.product_description %}
+                        <p class="item-description">{{ item.product_description }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="item-amount">
+                        {{ item.amount|floatformat:2 }} {{ item.currency }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Total -->
+            <div class="payment-total">
+                <div class="total-row">
+                    <span class="total-label">Total Amount:</span>
+                    <span class="total-amount">{{ payment_request.total_amount|floatformat:2 }} {{ payment_request.currency }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wallet Balance -->
+        <div class="card wallet-balance-small">
+            <div class="balance-info">
+                <span class="balance-label">Your Wallet Balance:</span>
+                <span class="balance-amount">{{ wallet.balance|floatformat:2 }} {{ wallet.currency }}</span>
+            </div>
+            {% if wallet.balance < payment_request.total_amount %}
+            <div class="alert alert-danger">
+                <strong>⚠️ Insufficient Balance</strong>
+                <p>You need {{ payment_request.total_amount|floatformat:2 }} UGX but have {{ wallet.balance|floatformat:2 }} UGX</p>
+                <a href="{% url 'deposit' %}" class="btn btn-primary btn-sm">Deposit Funds</a>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Payment Actions -->
+        <div class="payment-actions">
+            {% if wallet.balance >= payment_request.total_amount %}
+            <button 
+                onclick="confirmPayment('{{ payment_request.request_id }}')" 
+                class="btn btn-primary btn-block btn-lg payment-btn"
+            >
+                <span class="btn-icon">💳</span>
+                Pay {{ payment_request.total_amount|floatformat:2 }} {{ payment_request.currency }}
+            </button>
+            {% else %}
+            <button class="btn btn-secondary btn-block btn-lg" disabled>
+                Insufficient Balance
+            </button>
+            {% endif %}
+            
+            <button onclick="cancelPayment()" class="btn btn-outline btn-block cancel-btn">
+                Cancel Payment
+            </button>
+        </div>
+
+        <!-- Payment Info -->
+        <div class="payment-info">
+            <div class="info-item">
+                <span class="info-icon">🛡️</span>
+                <div class="info-content">
+                    <strong>Buyer Protection</strong>
+                    <p>You can request a refund if items are not delivered</p>
+                </div>
+            </div>
+            <div class="info-item">
+                <span class="info-icon">✅</span>
+                <div class="info-content">
+                    <strong>Delivery Confirmation</strong>
+                    <p>Confirm receipt before sellers can withdraw funds</p>
+                </div>
+            </div>
+            <div class="info-item">
+                <span class="info-icon">🔐</span>
+                <div class="info-content">
+                    <strong>Secure Transaction</strong>
+                    <p>Your payment is encrypted and protected</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Request Details -->
+        <div class="request-details">
+            <small class="text-muted">
+                Request ID: {{ payment_request.request_id }}<br>
+                Status: <span class="badge badge-{{ payment_request.status }}">{{ payment_request.get_status_display }}</span>
+            </small>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Processing Modal -->
+<div id="processingModal" class="modal">
+    <div class="modal-content processing-content">
+        <div class="spinner"></div>
+        <h3>Processing Payment...</h3>
+        <p>Please wait while we process your payment</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    body {
+        background: #f5f7fa;
+    }
+    
+    .payment-page {
+        padding: 20px;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+    
+    .payment-container {
+        background: white;
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    
+    .payment-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        text-align: center;
+    }
+    
+    .merchant-info h2 {
+        margin: 0 0 10px 0;
+        font-size: 1.8em;
+        color: white;
+    }
+    
+    .merchant-info p {
+        margin: 0;
+        opacity: 0.9;
+        font-size: 0.9em;
+    }
+    
+    .security-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(255, 255, 255, 0.2);
+        padding: 8px 15px;
+        border-radius: 20px;
+        margin-top: 15px;
+        font-size: 0.9em;
+    }
+    
+    .payment-details-card {
+        margin: 20px;
+        padding: 25px;
+        border: 1px solid #dee2e6;
+    }
+    
+    .payment-details-card h3 {
+        margin: 0 0 20px 0;
+        color: #333;
+        font-size: 1.3em;
+    }
+    
+    .items-list {
+        margin-bottom: 20px;
+    }
+    
+    .payment-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+    
+    .payment-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .seller-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 5px;
+    }
+    
+    .seller-icon {
+        font-size: 1.2em;
+    }
+    
+    .seller-name {
+        font-weight: bold;
+        color: #333;
+    }
+    
+    .item-description {
+        margin: 5px 0 0 28px;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .item-amount {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #333;
+        white-space: nowrap;
+    }
+    
+    .payment-total {
+        border-top: 2px solid #dee2e6;
+        margin-top: 20px;
+        padding-top: 15px;
+    }
+    
+    .total-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .total-label {
+        font-size: 1.1em;
+        font-weight: bold;
+        color: #333;
+    }
+    
+    .total-amount {
+        font-size: 1.8em;
+        font-weight: bold;
+        color: #667eea;
+    }
+    
+    .wallet-balance-small {
+        margin: 20px;
+        padding: 20px;
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+    }
+    
+    .balance-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    
+    .balance-label {
+        color: #666;
+        font-weight: bold;
+    }
+    
+    .balance-amount {
+        font-size: 1.3em;
+        font-weight: bold;
+        color: #28a745;
+    }
+    
+    .payment-actions {
+        padding: 20px;
+    }
+    
+    .payment-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+        font-weight: bold;
+        transition: transform 0.2s;
+    }
+    
+    .payment-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-outline {
+        background: transparent;
+        border: 2px solid #dee2e6;
+        color: #666;
+    }
+    
+    .btn-outline:hover {
+        background: #f8f9fa;
+    }
+    
+    .cancel-btn {
+        margin-top: 10px;
+    }
+    
+    .payment-info {
+        padding: 20px;
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .info-item {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 15px;
+    }
+    
+    .info-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .info-icon {
+        font-size: 1.5em;
+        flex-shrink: 0;
+    }
+    
+    .info-content strong {
+        display: block;
+        margin-bottom: 3px;
+        color: #333;
+    }
+    
+    .info-content p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .request-details {
+        padding: 15px 20px;
+        background: #f8f9fa;
+        border-top: 1px solid #dee2e6;
+        text-align: center;
+    }
+    
+    .processing-content {
+        text-align: center;
+        padding: 40px;
+    }
+    
+    .processing-content h3 {
+        margin: 20px 0 10px 0;
+        color: #333;
+    }
+    
+    .processing-content p {
+        color: #666;
+        margin: 0;
+    }
+    
+    @media (max-width: 600px) {
+        .payment-page {
+            padding: 10px;
+        }
+        
+        .payment-header {
+            padding: 20px;
+        }
+        
+        .payment-item {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .item-amount {
+            text-align: left;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function confirmPayment(requestId) {
+        if (!confirm('Confirm payment of {{ payment_request.total_amount|floatformat:2 }} {{ payment_request.currency }}?')) {
+            return;
+        }
+        
+        // Show processing modal
+        document.getElementById('processingModal').classList.add('active');
+        
+        // Process payment
+        processPayment(requestId);
+    }
+    
+    function cancelPayment() {
+        if (confirm('Are you sure you want to cancel this payment?')) {
+            // Redirect back to platform
+            window.parent.postMessage({
+                type: 'payment_cancelled',
+                requestId: '{{ payment_request.request_id }}'
+            }, '*');
+            
+            // Fallback redirect
+            setTimeout(() => {
+                window.location.href = '{{ payment_request.platform.return_url }}';
+            }, 1000);
+        }
+    }
+    
+    // Handle payment completion
+    window.addEventListener('message', function(event) {
+        // Handle messages from parent window if needed
+    });
+</script>
+{% endblock %}

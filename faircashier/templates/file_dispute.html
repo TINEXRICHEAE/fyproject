@@ -1,0 +1,482 @@
+{% extends 'base.html' %}
+
+{% block title %}File Dispute - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="dispute-page">
+    <div class="page-header">
+        <a href="{% url 'buyer-dashboard' %}" class="back-link">← Back to Dashboard</a>
+        <h1>File a Dispute</h1>
+        <p class="subtitle">Report an issue with your order for resolution</p>
+    </div>
+
+    <div class="dispute-container">
+        <!-- Dispute Form -->
+        <div class="dispute-form-section">
+            <div class="card">
+                <div class="alert alert-info">
+                    <strong>ℹ️ Before Filing a Dispute</strong>
+                    <p>Please try to contact the seller first to resolve the issue. File a dispute only if the seller is unresponsive or the issue cannot be resolved directly.</p>
+                </div>
+
+                <form method="POST" action="{% url 'file_dispute' %}" onsubmit="return handleDisputeSubmit(event)">
+                    {% csrf_token %}
+                    
+                    <!-- Select Payment Item -->
+                    <div class="form-group">
+                        <label for="item_id">Select Order Item <span class="required">*</span></label>
+                        <select name="item_id" id="item_id" class="form-control" required onchange="updateItemDetails()">
+                            <option value="">-- Select an item to dispute --</option>
+                            {% for item in payment_items %}
+                            <option 
+                                value="{{ item.item_id }}"
+                                data-seller="{{ item.seller_email }}"
+                                data-amount="{{ item.amount }}"
+                                data-description="{{ item.product_description }}"
+                                data-date="{{ item.created_at|date:'M d, Y' }}"
+                            >
+                                {{ item.seller_email }} - {{ item.amount }} UGX ({{ item.created_at|date:"M d" }})
+                            </option>
+                            {% empty %}
+                            <option value="">No items available for dispute</option>
+                            {% endfor %}
+                        </select>
+                        <small class="form-text">Select the specific item you want to dispute</small>
+                    </div>
+
+                    <!-- Item Details Preview -->
+                    <div id="itemDetails" class="item-preview" style="display: none;">
+                        <h4>Item Details</h4>
+                        <div class="detail-row">
+                            <span class="detail-label">Seller:</span>
+                            <span class="detail-value" id="itemSeller">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Amount:</span>
+                            <span class="detail-value" id="itemAmount">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Description:</span>
+                            <span class="detail-value" id="itemDescription">-</span>
+                        </div>
+                        <div class="detail-row">
+                            <span class="detail-label">Order Date:</span>
+                            <span class="detail-value" id="itemDate">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Dispute Reason -->
+                    <div class="form-group">
+                        <label for="reason">Reason for Dispute <span class="required">*</span></label>
+                        <select name="reason" id="reason" class="form-control" required>
+                            <option value="">-- Select a reason --</option>
+                            <option value="no_delivery">No Delivery / Item Not Received</option>
+                            <option value="wrong_item">Wrong Item Delivered</option>
+                            <option value="damaged_item">Damaged or Defective Item</option>
+                            <option value="incomplete_delivery">Incomplete Delivery</option>
+                            <option value="other">Other (Please Specify)</option>
+                        </select>
+                    </div>
+
+                    <!-- Detailed Description -->
+                    <div class="form-group">
+                        <label for="description">Detailed Description <span class="required">*</span></label>
+                        <textarea 
+                            name="description" 
+                            id="description" 
+                            class="form-control" 
+                            rows="6"
+                            placeholder="Please provide detailed information about the issue. Include dates, communication attempts with seller, and any other relevant details..."
+                            required
+                            minlength="50"
+                        ></textarea>
+                        <small class="form-text">
+                            <span id="charCount">0</span> / 1000 characters (minimum 50)
+                        </small>
+                    </div>
+
+                    <!-- Evidence Upload (Optional - for future implementation) -->
+                    <div class="form-group">
+                        <label for="evidence">Evidence (Optional)</label>
+                        <div class="upload-area">
+                            <div class="upload-icon">📎</div>
+                            <p>Upload photos or documents to support your dispute</p>
+                            <input type="file" id="evidence" accept="image/*,.pdf" multiple style="display: none;">
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('evidence').click()">
+                                Choose Files
+                            </button>
+                        </div>
+                        <div id="fileList" class="file-list"></div>
+                    </div>
+
+                    <!-- Confirmation -->
+                    <div class="form-check">
+                        <input type="checkbox" id="confirm" required>
+                        <label for="confirm">
+                            I confirm that the information provided is accurate and truthful. I understand that filing false disputes may result in account suspension.
+                        </label>
+                    </div>
+
+                    <!-- Submit Button -->
+                    <button type="submit" class="btn btn-danger btn-block btn-lg">
+                        <span class="btn-icon">⚠️</span> Submit Dispute
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Info Section -->
+        <div class="dispute-info-section">
+            <!-- Dispute Process -->
+            <div class="card">
+                <h3>Dispute Resolution Process</h3>
+                <div class="process-steps">
+                    <div class="process-step">
+                        <div class="process-number">1</div>
+                        <div class="process-content">
+                            <strong>Dispute Filed</strong>
+                            <p>You submit your dispute with details</p>
+                        </div>
+                    </div>
+                    <div class="process-step">
+                        <div class="process-number">2</div>
+                        <div class="process-content">
+                            <strong>Automatic Check</strong>
+                            <p>System checks if payment was cleared</p>
+                        </div>
+                    </div>
+                    <div class="process-step">
+                        <div class="process-number">3</div>
+                        <div class="process-content">
+                            <strong>Resolution</strong>
+                            <p>
+                                <strong>If not cleared:</strong> Automatic refund<br>
+                                <strong>If cleared:</strong> Admin review
+                            </p>
+                        </div>
+                    </div>
+                    <div class="process-step">
+                        <div class="process-number">4</div>
+                        <div class="process-content">
+                            <strong>Outcome</strong>
+                            <p>Refund processed or dispute closed</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auto Refund Info -->
+            <div class="card success-card">
+                <h3>✅ Auto-Refund Eligible</h3>
+                <p>If you haven't confirmed delivery (cleared the payment), you'll receive an automatic refund when you file a dispute.</p>
+                <ul>
+                    <li>Instant refund to your wallet</li>
+                    <li>No admin review needed</li>
+                    <li>Funds available immediately</li>
+                </ul>
+            </div>
+
+            <!-- Escalation Info -->
+            <div class="card warning-card">
+                <h3>⚠️ Admin Review Required</h3>
+                <p>If you already confirmed delivery, your dispute will be escalated to admin for review.</p>
+                <ul>
+                    <li>Admin will review evidence</li>
+                    <li>May take 2-5 business days</li>
+                    <li>Decision is final</li>
+                </ul>
+            </div>
+
+            <!-- Tips -->
+            <div class="card">
+                <h3>💡 Tips for Filing</h3>
+                <ul>
+                    <li>Be specific and detailed in your description</li>
+                    <li>Include timeline of events</li>
+                    <li>Mention any attempts to contact seller</li>
+                    <li>Upload clear evidence if available</li>
+                    <li>Be honest and accurate</li>
+                </ul>
+            </div>
+
+            <!-- Support -->
+            <div class="card">
+                <h3>Need Help?</h3>
+                <p>Contact our support team if you have questions about filing a dispute.</p>
+                <a href="mailto:support@faircashier.com" class="btn btn-outline btn-block">
+                    Contact Support
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dispute-page {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .page-header {
+        margin-bottom: 30px;
+    }
+    
+    .back-link {
+        color: #dc3545;
+        text-decoration: none;
+        font-weight: bold;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    
+    .back-link:hover {
+        text-decoration: underline;
+    }
+    
+    .page-header h1 {
+        font-size: 2.5em;
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    
+    .subtitle {
+        color: #666;
+        font-size: 1.1em;
+    }
+    
+    .dispute-container {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+    }
+    
+    .required {
+        color: #dc3545;
+    }
+    
+    .item-preview {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    .item-preview h4 {
+        margin: 0 0 15px 0;
+        color: #333;
+        font-size: 1.1em;
+    }
+    
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+    
+    .detail-label {
+        color: #666;
+        font-weight: bold;
+    }
+    
+    .detail-value {
+        color: #333;
+    }
+    
+    textarea.form-control {
+        resize: vertical;
+    }
+    
+    .upload-area {
+        border: 2px dashed #dee2e6;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        background: #f8f9fa;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    
+    .upload-area:hover {
+        border-color: #667eea;
+        background: #f0f2ff;
+    }
+    
+    .upload-icon {
+        font-size: 3em;
+        margin-bottom: 10px;
+    }
+    
+    .upload-area p {
+        margin: 10px 0;
+        color: #666;
+    }
+    
+    .file-list {
+        margin-top: 10px;
+    }
+    
+    .process-steps {
+        margin-top: 20px;
+    }
+    
+    .process-step {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .process-step:last-child {
+        margin-bottom: 0;
+    }
+    
+    .process-number {
+        width: 35px;
+        height: 35px;
+        background: #dc3545;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        flex-shrink: 0;
+    }
+    
+    .process-content strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
+    .process-content p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .success-card {
+        background: #d4edda;
+        border: 1px solid #c3e6cb;
+    }
+    
+    .success-card h3 {
+        color: #155724;
+        margin-bottom: 10px;
+    }
+    
+    .success-card p,
+    .success-card li {
+        color: #155724;
+    }
+    
+    .warning-card {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+    }
+    
+    .warning-card h3 {
+        color: #856404;
+        margin-bottom: 10px;
+    }
+    
+    .warning-card p,
+    .warning-card li {
+        color: #856404;
+    }
+    
+    .card ul {
+        margin: 10px 0 0 0;
+        padding-left: 20px;
+    }
+    
+    .card li {
+        margin-bottom: 8px;
+    }
+    
+    .btn-outline {
+        background: transparent;
+        border: 2px solid #667eea;
+        color: #667eea;
+    }
+    
+    .btn-outline:hover {
+        background: #667eea;
+        color: white;
+    }
+    
+    @media (max-width: 968px) {
+        .dispute-container {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Character counter
+    const descriptionField = document.getElementById('description');
+    const charCount = document.getElementById('charCount');
+    
+    descriptionField?.addEventListener('input', function() {
+        charCount.textContent = this.value.length;
+    });
+    
+    // Update item details
+    function updateItemDetails() {
+        const select = document.getElementById('item_id');
+        const selectedOption = select.options[select.selectedIndex];
+        const detailsDiv = document.getElementById('itemDetails');
+        
+        if (select.value) {
+            document.getElementById('itemSeller').textContent = selectedOption.dataset.seller;
+            document.getElementById('itemAmount').textContent = selectedOption.dataset.amount + ' UGX';
+            document.getElementById('itemDescription').textContent = selectedOption.dataset.description || 'N/A';
+            document.getElementById('itemDate').textContent = selectedOption.dataset.date;
+            detailsDiv.style.display = 'block';
+        } else {
+            detailsDiv.style.display = 'none';
+        }
+    }
+    
+    // File upload handler
+    document.getElementById('evidence')?.addEventListener('change', function() {
+        const fileList = document.getElementById('fileList');
+        fileList.innerHTML = '';
+        
+        Array.from(this.files).forEach(file => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.textContent = file.name;
+            fileList.appendChild(fileItem);
+        });
+    });
+    
+    function handleDisputeSubmit(event) {
+        event.preventDefault();
+        const form = event.target;
+        const description = form.description.value;
+        
+        if (description.length < 50) {
+            showNotification('Description must be at least 50 characters', 'error');
+            return false;
+        }
+        
+        if (!confirm('Are you sure you want to file this dispute? This action cannot be undone.')) {
+            return false;
+        }
+        
+        // Submit via AJAX
+        fileDispute(event);
+        return false;
+    }
+</script>
+{% endblock %}

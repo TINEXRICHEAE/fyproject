@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+
+{% block title %}Home - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="hero-section">
+    <h1>Welcome to Fair Cashier</h1>
+    <p class="hero-subtitle">Secure digital wallet and payment platform for multi-vendor e-commerce</p>
+    
+    {% if not user.is_authenticated %}
+    <div class="cta-buttons">
+        <a href="{% url 'register_user' %}" class="btn btn-primary">Get Started</a>
+        <a href="{% url 'login_user' %}" class="btn btn-secondary">Login</a>
+    </div>
+    {% endif %}
+</div>
+
+<div class="features-section">
+    <h2>Why Choose Fair Cashier?</h2>
+    <div class="features-grid">
+        <div class="feature-card">
+            <div class="feature-icon">💳</div>
+            <h3>Digital Wallets</h3>
+            <p>Secure digital wallets for buyers and sellers with real-time balance updates</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🔒</div>
+            <h3>Secure Payments</h3>
+            <p>End-to-end encrypted transactions with mobile money integration</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">⚡</div>
+            <h3>Instant Transfers</h3>
+            <p>Lightning-fast transfers from buyers to multiple sellers simultaneously</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🛡️</div>
+            <h3>Dispute Resolution</h3>
+            <p>Automated dispute handling with buyer protection and admin oversight</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">🏪</div>
+            <h3>Multi-Platform</h3>
+            <p>Support for multiple e-commerce platforms with unified payment processing</p>
+        </div>
+        <div class="feature-card">
+            <div class="feature-icon">📊</div>
+            <h3>Analytics</h3>
+            <p>Comprehensive transaction history and financial reporting</p>
+        </div>
+    </div>
+</div>
+
+<div class="how-it-works">
+    <h2>How It Works</h2>
+    <div class="steps">
+        <div class="step">
+            <div class="step-number">1</div>
+            <h3>Register & Verify</h3>
+            <p>Create your account as a buyer, seller, or platform admin</p>
+        </div>
+        <div class="step">
+            <div class="step-number">2</div>
+            <h3>Deposit Funds</h3>
+            <p>Load your wallet via mobile money (MTN, Airtel)</p>
+        </div>
+        <div class="step">
+            <div class="step-number">3</div>
+            <h3>Make Payments</h3>
+            <p>Shop and pay securely across multiple vendors</p>
+        </div>
+        <div class="step">
+            <div class="step-number">4</div>
+            <h3>Confirm & Cash Out</h3>
+            <p>Confirm delivery and sellers can withdraw to mobile money</p>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .hero-section {
+        text-align: center;
+        padding: 60px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        margin-bottom: 40px;
+    }
+    
+    .hero-section h1 {
+        font-size: 3em;
+        margin-bottom: 20px;
+    }
+    
+    .hero-subtitle {
+        font-size: 1.3em;
+        margin-bottom: 30px;
+        opacity: 0.9;
+    }
+    
+    .cta-buttons {
+        display: flex;
+        gap: 20px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+    
+    .btn {
+        padding: 15px 40px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-weight: bold;
+        transition: all 0.3s;
+    }
+    
+    .btn-primary {
+        background: white;
+        color: #667eea;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+    
+    .btn-secondary {
+        background: transparent;
+        color: white;
+        border: 2px solid white;
+    }
+    
+    .btn-secondary:hover {
+        background: white;
+        color: #667eea;
+    }
+    
+    .features-section, .how-it-works {
+        margin: 60px 0;
+    }
+    
+    .features-section h2, .how-it-works h2 {
+        text-align: center;
+        font-size: 2.5em;
+        margin-bottom: 40px;
+    }
+    
+    .features-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 30px;
+    }
+    
+    .feature-card {
+        padding: 30px;
+        background: white;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: transform 0.3s;
+    }
+    
+    .feature-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+    }
+    
+    .feature-icon {
+        font-size: 3em;
+        margin-bottom: 15px;
+    }
+    
+    .steps {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 30px;
+        margin-top: 40px;
+    }
+    
+    .step {
+        text-align: center;
+        padding: 20px;
+    }
+    
+    .step-number {
+        width: 60px;
+        height: 60px;
+        background: #667eea;
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5em;
+        font-weight: bold;
+        margin: 0 auto 20px;
+    }
+</style>
+{% endblock %}

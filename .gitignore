@@ -1,0 +1,13 @@
+/other/
+
+# Environments
+/cashierenv/
+/faircashier/.env
+
+/faircashier/cashingapp/__pycache__/
+
+
+# Notes and prompts
+notes.txt
+prompt.txt
+tempt.txt
