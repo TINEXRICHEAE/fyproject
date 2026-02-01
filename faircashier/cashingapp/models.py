@@ -102,6 +102,7 @@ class Users(AbstractBaseUser, PermissionsMixin):
     )
     role = models.CharField(max_length=50, choices=ROLE_CHOICES)
     admin_email = models.EmailField(max_length=50, blank=True, null=True)
+    platform_domain = models.EmailField(max_length=50, blank=True, null=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -132,7 +133,7 @@ class Platform(models.Model):
         limit_choices_to={'role': 'admin'}
     )
     platform_name = models.CharField(max_length=255)
-    domain = models.URLField(max_length=500)
+    domain = models.URLField(unique=True, max_length=500)
     return_url = models.URLField(
         max_length=500, help_text="URL to redirect after payment")
     callback_url = models.URLField(

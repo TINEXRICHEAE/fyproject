@@ -16,7 +16,7 @@
             <div class="card">
                 <h2>Deposit Information</h2>
                 
-                <form method="POST" action="{% url 'deposit' %}" onsubmit="return handleDeposit(event)">
+                <form method="POST" action="{% url 'deposit' %}">
                     {% csrf_token %}
                     
                     <!-- Platform Selection -->
@@ -414,23 +414,6 @@
         document.getElementById('receiveAmount').textContent = amount.toLocaleString() + ' UGX';
     }
     
-    function handleDeposit(event) {
-        event.preventDefault();
-        const form = event.target;
-        const amount = parseFloat(form.amount.value);
-        
-        if (amount < 1000) {
-            showNotification('Minimum deposit amount is 1,000 UGX', 'error');
-            return false;
-        }
-        
-        if (!confirm('You will receive a mobile money prompt on your phone. Continue?')) {
-            return false;
-        }
-        
-        // Submit via AJAX
-        depositFunds(event);
-        return false;
-    }
+    
 </script>
 {% endblock %}

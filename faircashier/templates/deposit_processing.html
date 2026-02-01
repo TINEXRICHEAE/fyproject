@@ -1,0 +1,500 @@
+{% extends 'base.html' %}
+
+{% block title %}Processing Deposit - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="processing-page">
+    <div class="processing-container">
+        <div class="card processing-card">
+            <!-- Status Icon -->
+            <div class="status-icon-container">
+                <div class="status-icon" id="statusIcon">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+
+            <!-- Processing Message -->
+            <div class="processing-message" id="processingMessage">
+                <h2>Processing Your Deposit</h2>
+                <p class="subtitle">Please wait while we confirm your mobile money payment...</p>
+            </div>
+
+            <!-- Transaction Details -->
+            <div class="transaction-details">
+                <div class="detail-row">
+                    <span class="detail-label">Amount:</span>
+                    <span class="detail-value" id="amount">{{ amount }} UGX</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Provider:</span>
+                    <span class="detail-value" id="provider">{{ provider }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Phone Number:</span>
+                    <span class="detail-value" id="phoneNumber">{{ phone_number }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Transaction ID:</span>
+                    <span class="detail-value"><code id="transactionId">{{ transaction_id }}</code></span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Reference:</span>
+                    <span class="detail-value"><code id="referenceId">{{ reference_id }}</code></span>
+                </div>
+            </div>
+
+            <!-- Instructions -->
+            <div class="instructions-box" id="instructionsBox">
+                <div class="instruction-icon">📱</div>
+                <h3>Action Required</h3>
+                <p>{{ next_action }}</p>
+                <ul>
+                    <li>Check your phone for a mobile money prompt</li>
+                    <li>Enter your PIN to approve the payment</li>
+                    <li>Do not close this page until confirmation</li>
+                </ul>
+            </div>
+
+            <!-- Progress Steps -->
+            <div class="progress-steps">
+                <div class="step completed">
+                    <div class="step-dot"></div>
+                    <div class="step-label">Request Sent</div>
+                </div>
+                <div class="step active" id="step2">
+                    <div class="step-dot"></div>
+                    <div class="step-label">Awaiting Approval</div>
+                </div>
+                <div class="step" id="step3">
+                    <div class="step-dot"></div>
+                    <div class="step-label">Processing</div>
+                </div>
+                <div class="step" id="step4">
+                    <div class="step-dot"></div>
+                    <div class="step-label">Completed</div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="action-buttons" id="actionButtons">
+                <button onclick="checkStatus()" class="btn btn-secondary">
+                    Check Status
+                </button>
+                <a href="{% url 'deposit' %}" class="btn btn-outline">
+                    Cancel & Return
+                </a>
+            </div>
+
+            <!-- Success/Error Message (Initially Hidden) -->
+            <div class="result-message success-message" id="successMessage" style="display: none;">
+                <div class="result-icon">✅</div>
+                <h3>Deposit Successful!</h3>
+                <p>Your wallet has been credited with <strong id="successAmount"></strong></p>
+                <p class="new-balance">New Balance: <strong id="newBalance"></strong></p>
+                <a href="{% url 'wallet' %}" class="btn btn-primary btn-block">
+                    View Wallet
+                </a>
+            </div>
+
+            <div class="result-message error-message" id="errorMessage" style="display: none;">
+                <div class="result-icon">❌</div>
+                <h3>Deposit Failed</h3>
+                <p id="errorText"></p>
+                <div class="error-actions">
+                    <a href="{% url 'deposit' %}" class="btn btn-primary">
+                        Try Again
+                    </a>
+                    <a href="{% url 'wallet' %}" class="btn btn-outline">
+                        Return to Wallet
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Help Section -->
+        <div class="card help-section">
+            <h3>Need Help?</h3>
+            <div class="help-item">
+                <strong>Didn't receive a prompt?</strong>
+                <p>Check if you have network coverage and your phone is on</p>
+            </div>
+            <div class="help-item">
+                <strong>Transaction taking too long?</strong>
+                <p>Mobile money transactions typically complete within 2 minutes</p>
+            </div>
+            <div class="help-item">
+                <strong>Entered wrong PIN?</strong>
+                <p>You can try again or cancel and restart the deposit</p>
+            </div>
+            <a href="mailto:support@faircashier.com" class="btn btn-outline btn-block">
+                Contact Support
+            </a>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .processing-page {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .processing-container {
+        display: grid;
+        gap: 20px;
+    }
+    
+    .processing-card {
+        text-align: center;
+        padding: 40px;
+    }
+    
+    .status-icon-container {
+        margin-bottom: 30px;
+    }
+    
+    .status-icon {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .processing-message h2 {
+        font-size: 2em;
+        margin-bottom: 10px;
+        color: #333;
+    }
+    
+    .processing-message .subtitle {
+        color: #666;
+        font-size: 1.1em;
+    }
+    
+    .transaction-details {
+        background: #f8f9fa;
+        border-radius: 10px;
+        padding: 25px;
+        margin: 30px 0;
+        text-align: left;
+    }
+    
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 0;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+    
+    .detail-label {
+        color: #666;
+        font-weight: bold;
+    }
+    
+    .detail-value {
+        color: #333;
+        font-weight: bold;
+    }
+    
+    .detail-value code {
+        background: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+    
+    .instructions-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 25px;
+        margin: 20px 0;
+    }
+    
+    .instruction-icon {
+        font-size: 3em;
+        margin-bottom: 15px;
+    }
+    
+    .instructions-box h3 {
+        color: white;
+        margin-bottom: 10px;
+    }
+    
+    .instructions-box ul {
+        text-align: left;
+        margin: 15px 0 0 30px;
+    }
+    
+    .instructions-box li {
+        margin-bottom: 8px;
+        opacity: 0.95;
+    }
+    
+    .progress-steps {
+        display: flex;
+        justify-content: space-between;
+        margin: 40px 0;
+        padding: 0 20px;
+    }
+    
+    .step {
+        flex: 1;
+        text-align: center;
+        position: relative;
+    }
+    
+    .step-dot {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #dee2e6;
+        margin: 0 auto 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+        z-index: 2;
+    }
+    
+    .step.completed .step-dot {
+        background: #28a745;
+    }
+    
+    .step.completed .step-dot::after {
+        content: '✓';
+        color: white;
+        font-weight: bold;
+    }
+    
+    .step.active .step-dot {
+        background: #667eea;
+        animation: pulse 2s infinite;
+    }
+    
+    .step-label {
+        font-size: 0.9em;
+        color: #666;
+    }
+    
+    .step.completed .step-label,
+    .step.active .step-label {
+        color: #333;
+        font-weight: bold;
+    }
+    
+    .step:not(:last-child)::before {
+        content: '';
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        right: -50%;
+        height: 2px;
+        background: #dee2e6;
+        z-index: 1;
+    }
+    
+    .step.completed:not(:last-child)::before {
+        background: #28a745;
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+            box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+        }
+        50% {
+            transform: scale(1.05);
+            box-shadow: 0 0 0 10px rgba(102, 126, 234, 0);
+        }
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 30px;
+    }
+    
+    .result-message {
+        padding: 30px;
+        border-radius: 10px;
+        margin-top: 20px;
+    }
+    
+    .success-message {
+        background: #d4edda;
+        border: 2px solid #28a745;
+    }
+    
+    .error-message {
+        background: #f8d7da;
+        border: 2px solid #dc3545;
+    }
+    
+    .result-icon {
+        font-size: 4em;
+        margin-bottom: 15px;
+    }
+    
+    .result-message h3 {
+        color: #333;
+        margin-bottom: 10px;
+    }
+    
+    .new-balance {
+        font-size: 1.2em;
+        margin-top: 15px;
+    }
+    
+    .error-actions {
+        display: flex;
+        gap: 15px;
+        justify-content: center;
+        margin-top: 20px;
+    }
+    
+    .help-section {
+        padding: 25px;
+    }
+    
+    .help-item {
+        padding: 15px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .help-item:last-child {
+        border-bottom: none;
+    }
+    
+    .help-item strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
+    .help-item p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const transactionId = '{{ transaction_id }}';
+    const referenceId = '{{ reference_id }}';
+    
+    // Auto-complete deposit after 5 seconds (simulates webhook callback)
+    setTimeout(() => {
+        simulateCompletion();
+    }, 5000);
+    
+    function simulateCompletion() {
+        // Update progress
+        updateStep(3, 'active');
+        
+        // Call webhook to complete transaction
+        fetch(`/api/webhook/complete/${transactionId}/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                updateStep(3, 'completed');
+                updateStep(4, 'active');
+                
+                setTimeout(() => {
+                    updateStep(4, 'completed');
+                    showSuccess({
+                        amount: '{{ amount }}',
+                        new_balance: data.new_balance
+                    });
+                }, 1000);
+            } else {
+                showError({
+                    message: data.message || 'Transaction failed'
+                });
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showError({
+                message: 'Failed to complete transaction'
+            });
+        });
+    }
+    
+    function checkStatus() {
+        showNotification('Checking transaction status...', 'info');
+        
+        fetch(`/api/webhook/complete/${transactionId}/`, {
+            method: 'POST'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                updateStep(3, 'completed');
+                updateStep(4, 'completed');
+                showSuccess(data);
+            } else {
+                showNotification(data.message || 'Transaction still processing', 'warning');
+            }
+        })
+        .catch(error => {
+            showNotification('Could not check status', 'error');
+        });
+    }
+    
+    function updateStep(stepNum, state) {
+        const step = document.getElementById(`step${stepNum}`);
+        if (step) {
+            step.classList.remove('active', 'completed');
+            step.classList.add(state);
+        }
+    }
+    
+    function showSuccess(data) {
+        document.getElementById('processingMessage').style.display = 'none';
+        document.getElementById('instructionsBox').style.display = 'none';
+        document.getElementById('actionButtons').style.display = 'none';
+        document.querySelector('.progress-steps').style.display = 'none';
+        
+        document.getElementById('successAmount').textContent = data.amount + ' UGX';
+        document.getElementById('newBalance').textContent = parseFloat(data.new_balance).toLocaleString() + ' UGX';
+        document.getElementById('successMessage').style.display = 'block';
+        
+        document.querySelector('.status-icon').innerHTML = '<div style="font-size: 4em;">✅</div>';
+        
+        showNotification('Deposit completed successfully!', 'success');
+    }
+    
+    function showError(data) {
+        document.getElementById('processingMessage').style.display = 'none';
+        document.getElementById('instructionsBox').style.display = 'none';
+        document.getElementById('actionButtons').style.display = 'none';
+        document.querySelector('.progress-steps').style.display = 'none';
+        
+        document.getElementById('errorText').textContent = data.message || 'Transaction could not be completed.';
+        document.getElementById('errorMessage').style.display = 'block';
+        
+        document.querySelector('.status-icon').innerHTML = '<div style="font-size: 4em;">❌</div>';
+        
+        showNotification('Deposit failed', 'error');
+    }
+</script>
+{% endblock %}

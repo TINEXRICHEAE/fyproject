@@ -1,4 +1,4 @@
-// Fair Cashier - Main JavaScript
+// Fair Cashier - Main JavaScript - FIXED VERSION
 
 // CSRF Token Helper
 function getCookie(name) {
@@ -17,6 +17,67 @@ function getCookie(name) {
 }
 
 const csrftoken = getCookie('csrftoken');
+
+// Notification System
+function showNotification(message, type = 'info') {
+    document.querySelectorAll('.notification').forEach(el => el.remove());
+
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <span class="notification-icon">${getNotificationIcon(type)}</span>
+        <span class="notification-message">${message}</span>
+        <button class="notification-close" onclick="this.parentElement.remove()">×</button>
+    `;
+
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 6px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        animation: fadeIn 0.3s ease-out;
+    `;
+
+    switch (type) {
+        case 'success':
+            notification.style.background = '#28a745';
+            break;
+        case 'error':
+            notification.style.background = '#dc3545';
+            break;
+        case 'warning':
+            notification.style.background = '#ffc107';
+            notification.style.color = '#212529';
+            break;
+        default:
+            notification.style.background = '#17a2b8';
+    }
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.style.animation = 'fadeOut 0.3s ease-in';
+        setTimeout(() => notification.remove(), 300);
+    }, 5000);
+}
+
+function getNotificationIcon(type) {
+    const icons = {
+        'success': '✅',
+        'error': '❌',
+        'warning': '⚠️',
+        'info': 'ℹ️'
+    };
+    return icons[type] || icons['info'];
+}
 
 // Logout Function
 async function logout() {
@@ -52,6 +113,13 @@ async function registerUser(event) {
     const form = event.target;
     const formData = new FormData(form);
     
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner-small"></span> Registering...';
+    }
+    
     try {
         const response = await fetch(form.action, {
             method: 'POST',
@@ -70,10 +138,18 @@ async function registerUser(event) {
             }, 1500);
         } else {
             showNotification(data.error || 'Registration failed', 'error');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
         }
     } catch (error) {
         console.error('Registration error:', error);
         showNotification('An error occurred', 'error');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
     }
 }
 
@@ -83,6 +159,13 @@ async function loginUser(event) {
     
     const form = event.target;
     const formData = new FormData(form);
+    
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner-small"></span> Logging in...';
+    }
     
     try {
         const response = await fetch(form.action, {
@@ -102,89 +185,116 @@ async function loginUser(event) {
             }, 1000);
         } else {
             showNotification(data.error || 'Login failed', 'error');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
         }
     } catch (error) {
         console.error('Login error:', error);
         showNotification('An error occurred', 'error');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+        }
     }
 }
 
-// Deposit Funds
+// FIXED: Deposit Funds - Now properly prevents double submission
 async function depositFunds(event) {
     event.preventDefault();
+    event.stopPropagation(); // ADDED: Stop event from bubbling
     
     const form = event.target;
     const formData = new FormData(form);
     
-    showLoading();
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (!submitBtn) return false; // ADDED: Safety check
     
+    // Prevent multiple clicks
+    if (submitBtn.disabled) {
+        return false; // ADDED: Already processing
+    }
+    
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<span class="spinner-small"></span> Processing...';
+    submitBtn.disabled = true;
+
     try {
         const response = await fetch(form.action, {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': csrftoken
-            },
+            headers: { 'X-CSRFToken': csrftoken },
             body: formData
         });
-        
+
         const data = await response.json();
-        
-        hideLoading();
-        
-        if (response.ok) {
-            showNotification(data.message, 'success');
-            setTimeout(() => {
-                window.location.href = '/wallet/';
-            }, 2000);
+
+        if (response.ok && (data.status === 'success' || data.message)) {
+            showNotification(data.message || 'Deposit initiated successfully', 'success');
+            if (data.redirect_url) {
+                setTimeout(() => window.location.href = data.redirect_url, 500);
+            } else {
+                setTimeout(() => window.location.href = '/wallet/', 2000);
+            }
         } else {
             showNotification(data.error || 'Deposit failed', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
         }
     } catch (error) {
-        hideLoading();
         console.error('Deposit error:', error);
         showNotification('An error occurred', 'error');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
+    
+    return false; // ADDED: Prevent any default action
 }
 
-// Cash Out Funds
+// FIXED: Cash Out Funds
 async function cashoutFunds(event) {
     event.preventDefault();
+    event.stopPropagation();
+    
+    if (!confirm('Are you sure you want to cash out?')) {
+        return false;
+    }
     
     const form = event.target;
     const formData = new FormData(form);
     
-    if (!confirm('Are you sure you want to cash out?')) {
-        return;
-    }
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (!submitBtn || submitBtn.disabled) return false;
     
-    showLoading();
-    
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<span class="spinner-small"></span> Processing...';
+    submitBtn.disabled = true;
+
     try {
         const response = await fetch(form.action, {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': csrftoken
-            },
+            headers: { 'X-CSRFToken': csrftoken },
             body: formData
         });
-        
+
         const data = await response.json();
-        
-        hideLoading();
-        
-        if (response.ok) {
-            showNotification(data.message, 'success');
-            setTimeout(() => {
-                window.location.href = '/wallet/';
-            }, 2000);
+
+        if (response.ok && (data.status === 'success' || data.message)) {
+            showNotification(data.message || 'Cashout successful', 'success');
+            setTimeout(() => window.location.reload(), 2000);
         } else {
             showNotification(data.error || 'Cashout failed', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
         }
     } catch (error) {
-        hideLoading();
         console.error('Cashout error:', error);
         showNotification('An error occurred', 'error');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
+    
+    return false;
 }
 
 // Process Payment
@@ -193,8 +303,8 @@ async function processPayment(requestId) {
         return;
     }
     
-    showLoading();
-    
+    showNotification('Processing payment...', 'info');
+
     try {
         const response = await fetch(`/payment/${requestId}/process/`, {
             method: 'POST',
@@ -206,8 +316,6 @@ async function processPayment(requestId) {
         
         const data = await response.json();
         
-        hideLoading();
-        
         if (response.ok) {
             showNotification(data.message, 'success');
             setTimeout(() => {
@@ -217,7 +325,6 @@ async function processPayment(requestId) {
             showNotification(data.error || 'Payment failed', 'error');
         }
     } catch (error) {
-        hideLoading();
         console.error('Payment error:', error);
         showNotification('An error occurred', 'error');
     }
@@ -254,40 +361,52 @@ async function clearPaymentItem(itemId) {
     }
 }
 
-// File Dispute
+// FIXED: File Dispute
 async function fileDispute(event) {
     event.preventDefault();
+    event.stopPropagation();
+    
+    if (!confirm('Are you sure you want to file a dispute?')) {
+        return false;
+    }
     
     const form = event.target;
     const formData = new FormData(form);
     
-    if (!confirm('Are you sure you want to file a dispute?')) {
-        return;
-    }
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (!submitBtn || submitBtn.disabled) return false;
     
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<span class="spinner-small"></span> Filing...';
+    submitBtn.disabled = true;
+
     try {
         const response = await fetch(form.action, {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': csrftoken
-            },
+            headers: { 'X-CSRFToken': csrftoken },
             body: formData
         });
-        
+
         const data = await response.json();
-        
-        if (response.ok) {
+
+        if (response.ok && (data.message || data.status === 'success')) {
             showNotification(data.message, 'success');
             setTimeout(() => {
                 window.location.href = '/buyer-dashboard/';
             }, 2000);
         } else {
             showNotification(data.error || 'Failed to file dispute', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
         }
     } catch (error) {
         console.error('File dispute error:', error);
         showNotification('An error occurred', 'error');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
+    
+    return false;
 }
 
 // Resolve Dispute (Admin)
@@ -327,139 +446,82 @@ async function resolveDispute(disputeId, resolution) {
     }
 }
 
-// Register Platform
+// FIXED: Register Platform
 async function registerPlatform(event) {
     event.preventDefault();
+    event.stopPropagation();
     
     const form = event.target;
     const formData = new FormData(form);
     
+    const submitBtn = form.querySelector('button[type="submit"]');
+    if (!submitBtn || submitBtn.disabled) return false;
+    
+    const originalText = submitBtn.innerHTML;
+    submitBtn.innerHTML = '<span class="spinner-small"></span> Registering...';
+    submitBtn.disabled = true;
+
     try {
         const response = await fetch(form.action, {
             method: 'POST',
-            headers: {
-                'X-CSRFToken': csrftoken
-            },
+            headers: { 'X-CSRFToken': csrftoken },
             body: formData
         });
-        
+
         const data = await response.json();
-        
-        if (response.ok) {
+
+        if (response.ok && (data.message || data.status === 'success')) {
             showNotification('Platform registered successfully', 'success');
-            // Show API key in modal
-            showApiKeyModal(data.api_key);
+            if (data.api_key) {
+                showApiKeyModal(data.api_key);
+            } else if (data.platform_id) {
+                setTimeout(() => {
+                    window.location.href = `/platform/${data.platform_id}/`;
+                }, 2000);
+            }
         } else {
             showNotification(data.error || 'Failed to register platform', 'error');
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
         }
     } catch (error) {
         console.error('Platform registration error:', error);
         showNotification('An error occurred', 'error');
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
     }
+    
+    return false;
 }
 
 // Delete Account
-async function deleteAccount() {
-    const confirmation = prompt('Type "DELETE" to confirm account deletion:');
-    
-    if (confirmation !== 'DELETE') {
-        showNotification('Account deletion cancelled', 'info');
+function deleteAccount() {
+    if (!confirm('Are you absolutely sure you want to delete your account? This action cannot be undone.')) {
         return;
     }
-    
-    try {
-        const response = await fetch('/delete-account/', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': csrftoken
-            }
-        });
-        
-        const data = await response.json();
-        
+
+    fetch('/delete-account/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrftoken,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
         if (data.status === 'success') {
             showNotification(data.message, 'success');
             setTimeout(() => {
                 window.location.href = '/';
             }, 2000);
         } else {
-            showNotification(data.message, 'error');
+            showNotification(data.message || 'Failed to delete account', 'error');
         }
-    } catch (error) {
+    })
+    .catch(error => {
         console.error('Delete account error:', error);
         showNotification('An error occurred', 'error');
-    }
-}
-
-// Notification System
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
-    
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 15px 25px;
-        border-radius: 5px;
-        color: white;
-        font-weight: bold;
-        z-index: 10000;
-        animation: slideIn 0.3s ease-out;
-    `;
-    
-    switch (type) {
-        case 'success':
-            notification.style.background = '#28a745';
-            break;
-        case 'error':
-            notification.style.background = '#dc3545';
-            break;
-        case 'warning':
-            notification.style.background = '#ffc107';
-            notification.style.color = '#333';
-            break;
-        default:
-            notification.style.background = '#17a2b8';
-    }
-    
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-in';
-        setTimeout(() => {
-            notification.remove();
-        }, 300);
-    }, 3000);
-}
-
-// Loading Indicator
-function showLoading() {
-    const loading = document.createElement('div');
-    loading.id = 'loading-indicator';
-    loading.innerHTML = '<div class="spinner"></div>';
-    loading.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0,0,0,0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-    `;
-    document.body.appendChild(loading);
-}
-
-function hideLoading() {
-    const loading = document.getElementById('loading-indicator');
-    if (loading) {
-        loading.remove();
-    }
+    });
 }
 
 // Modal Functions
@@ -491,7 +553,7 @@ function showApiKeyModal(apiKey) {
     showModal('Platform API Key', `
         <p>Your platform has been registered successfully!</p>
         <p><strong>API Key:</strong></p>
-        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0;">
+        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 10px 0; font-family: monospace;">
             <code style="font-size: 1.1em;">${apiKey}</code>
         </div>
         <p style="color: #dc3545; margin-top: 15px;">
@@ -530,10 +592,10 @@ function formatDate(dateString) {
     });
 }
 
-// Add CSS animations
+// Add CSS animations for notifications
 const style = document.createElement('style');
 style.textContent = `
-    @keyframes slideIn {
+    @keyframes fadeIn {
         from {
             transform: translateX(100%);
             opacity: 0;
@@ -544,7 +606,7 @@ style.textContent = `
         }
     }
     
-    @keyframes slideOut {
+    @keyframes fadeOut {
         from {
             transform: translateX(0);
             opacity: 1;
@@ -553,42 +615,70 @@ style.textContent = `
             transform: translateX(100%);
             opacity: 0;
         }
+    }
+    
+    .spinner-small {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
     }
 `;
 document.head.appendChild(style);
 
-// Initialize on page load
+// FIXED: Initialize on page load - properly attach event listeners
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Fair Cashier loaded');
     
-    // Add event listeners for forms
+    // Use 'once' option to prevent double execution
     const registerForm = document.querySelector('form[action*="register"]');
-    if (registerForm) {
-        registerForm.addEventListener('submit', registerUser);
+    if (registerForm && !registerForm.hasAttribute('data-listener')) {
+        registerForm.setAttribute('data-listener', 'true');
+        registerForm.addEventListener('submit', registerUser, { once: false });
     }
     
     const loginForm = document.querySelector('form[action*="login"]');
-    if (loginForm) {
-        loginForm.addEventListener('submit', loginUser);
+    if (loginForm && !loginForm.hasAttribute('data-listener')) {
+        loginForm.setAttribute('data-listener', 'true');
+        loginForm.addEventListener('submit', loginUser, { once: false });
     }
     
     const depositForm = document.querySelector('form[action*="deposit"]');
-    if (depositForm) {
-        depositForm.addEventListener('submit', depositFunds);
+    if (depositForm && !depositForm.hasAttribute('data-listener')) {
+        depositForm.setAttribute('data-listener', 'true');
+        depositForm.addEventListener('submit', depositFunds, { once: false });
     }
     
     const cashoutForm = document.querySelector('form[action*="cashout"]');
-    if (cashoutForm) {
-        cashoutForm.addEventListener('submit', cashoutFunds);
+    if (cashoutForm && !cashoutForm.hasAttribute('data-listener')) {
+        cashoutForm.setAttribute('data-listener', 'true');
+        cashoutForm.addEventListener('submit', cashoutFunds, { once: false });
     }
     
     const disputeForm = document.querySelector('form[action*="dispute"]');
-    if (disputeForm) {
-        disputeForm.addEventListener('submit', fileDispute);
+    if (disputeForm && !disputeForm.hasAttribute('data-listener')) {
+        disputeForm.setAttribute('data-listener', 'true');
+        disputeForm.addEventListener('submit', fileDispute, { once: false });
     }
     
     const platformForm = document.querySelector('form[action*="platform/register"]');
-    if (platformForm) {
-        platformForm.addEventListener('submit', registerPlatform);
+    if (platformForm && !platformForm.hasAttribute('data-listener')) {
+        platformForm.setAttribute('data-listener', 'true');
+        platformForm.addEventListener('submit', registerPlatform, { once: false });
     }
+
+    // Close modal when clicking outside
+    document.addEventListener('click', function(event) {
+        const modal = document.querySelector('.modal.active');
+        if (modal && event.target === modal) {
+            closeModal();
+        }
+    });
 });

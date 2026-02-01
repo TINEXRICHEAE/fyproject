@@ -1,4 +1,5 @@
-/other/
+
+faircashier/logs/
 
 # Environments
 /cashierenv/
@@ -10,4 +11,4 @@
 # Notes and prompts
 notes.txt
 prompt.txt
-tempt.txt
+temp.txt

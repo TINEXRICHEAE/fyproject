@@ -125,7 +125,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
@@ -144,3 +144,151 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+
+
+# ============= CACHE CONFIGURATION =============
+# Cache configuration for duplicate transaction prevention
+# Using in-memory cache for development (fast and simple)
+# For production, consider Redis or Memcached
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'faircashier-cache',
+        'OPTIONS': {
+            'MAX_ENTRIES': 1000,  # Maximum number of cache entries
+        }
+    }
+}
+
+
+
+# ============================================================================
+# LOGGING CONFIGURATION - For monitoring and debugging
+# ============================================================================
+
+# Create logs directory if it doesn't exist
+LOGS_DIR = BASE_DIR / 'logs'
+LOGS_DIR.mkdir(exist_ok=True)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    
+    'formatters': {
+        'verbose': {
+            'format': '[{levelname}] {asctime} {module} {process:d} {thread:d} - {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '[{levelname}] {asctime} - {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+        'transaction': {
+            'format': '[{levelname}] {asctime} {name} - {message}',
+            'style': '{',
+            'datefmt': '%Y-%m-%d %H:%M:%S',
+        },
+    },
+    
+    'filters': {
+        'require_debug_true': {
+            '()': 'django.utils.log.RequireDebugTrue',
+        },
+        'require_debug_false': {
+            '()': 'django.utils.log.RequireDebugFalse',
+        },
+    },
+    
+    'handlers': {
+        # Console handler - prints to terminal
+        'console': {
+            'level': 'INFO',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple'
+        },
+        
+        # General application log file
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'faircashier.log'),
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        
+        # Transaction-specific log file
+        'transaction_file': {
+            'level': 'INFO',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'transactions.log'),
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 10,
+            'formatter': 'transaction',
+        },
+        
+        # Duplicate detection log file
+        'duplicate_file': {
+            'level': 'WARNING',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'duplicates.log'),
+            'maxBytes': 5242880,  # 5MB
+            'backupCount': 5,
+            'formatter': 'transaction',
+        },
+        
+        # Error-only log file
+        'error_file': {
+            'level': 'ERROR',
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': str(LOGS_DIR / 'errors.log'),
+            'maxBytes': 10485760,  # 10MB
+            'backupCount': 10,
+            'formatter': 'verbose',
+        },
+    },
+    
+    'loggers': {
+        # Django framework loggers
+        'django': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        
+        'django.request': {
+            'handlers': ['console', 'error_file'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        
+        # Your application loggers
+        'cashingapp': {
+            'handlers': ['console', 'file', 'transaction_file', 'duplicate_file', 'error_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        
+        'cashingapp.views': {
+            'handlers': ['console', 'transaction_file', 'duplicate_file', 'error_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        
+        'cashingapp.payment_processor': {
+            'handlers': ['console', 'transaction_file', 'error_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+    
+    # Root logger (catches everything not specified above)
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
+}
