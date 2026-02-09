@@ -1,0 +1,72 @@
+<!-- templates/buyer_seller_base.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>{% block title %}Fair Cashier{% endblock %}</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                        "secondary-bg": "#FFFFFF",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "none": "0",
+                        "sm": "0",
+                        "DEFAULT": "0",
+                        "lg": "0",
+                        "xl": "0",
+                        "full": "0"
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <style>
+        @layer base {
+            body {
+                font-family: 'Manrope', sans-serif;
+                background-color: #000000;
+                color: white;
+            }
+        }
+        * {
+            box-shadow: none !important;
+            text-shadow: none !important;
+        }
+        .pin-input {
+            width: 3rem;
+            height: 3rem;
+            font-size: 1.5rem;
+            text-align: center;
+            border: 2px solid white;
+            background: black;
+            color: white;
+            font-weight: 800;
+        }
+        .pin-input:focus {
+            border-color: #00FF00;
+            outline: none;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    {% block content %}{% endblock %}
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

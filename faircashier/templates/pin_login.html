@@ -1,0 +1,227 @@
+<!-- templates/pin_login.html (ENHANCED) -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Login - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">login</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Fair Cashier</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Welcome Back</p>
+    </div>
+
+    <!-- Form -->
+    <form id="pinLoginForm" class="space-y-6">
+        <!-- Email -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Email
+            </label>
+            <input 
+                type="email" 
+                id="email" 
+                name="email" 
+                value="{{ prefill_email }}"
+                {% if prefill_email %}readonly{% endif %}
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary {% if prefill_email %}opacity-70{% endif %}"
+                required
+            />
+        </div>
+
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter Your PIN
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Login
+        </button>
+    </form>
+
+    <!-- Setup Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <p class="text-xs font-bold text-white/70 uppercase">
+            Don't have an account?
+            <a href="/pin-setup/?email={{ prefill_email }}&return={{ return_url }}" class="text-primary underline decoration-2">Create Account</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RETURN_URL = '{{ return_url }}';
+const IS_IFRAME = window.self !== window.top;
+
+console.log('🔐 PIN Login Page');
+console.log('Return URL:', RETURN_URL);
+console.log('Is in iframe:', IS_IFRAME);
+
+// PIN Input Auto-Focus with numeric validation
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    // Only allow numbers
+    input.addEventListener('input', function(e) {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+        
+        // Auto-submit on 4th digit
+        if (index === 3 && this.value) {
+            setTimeout(() => {
+                document.getElementById('pinLoginForm').dispatchEvent(new Event('submit'));
+            }, 100);
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+    
+    // Prevent non-numeric input
+    input.addEventListener('keypress', function(e) {
+        if (!/[0-9]/.test(e.key)) {
+            e.preventDefault();
+        }
+    });
+});
+
+// Focus first input
+document.getElementById('pin1').focus();
+
+// Form Submission
+document.getElementById('pinLoginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    // Collect PIN
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    // Validate
+    if (pin.length !== 4) {
+        showError('Please enter complete 4-digit PIN');
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    
+    // Submit
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(window.location.pathname + window.location.search, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            console.log('✅ Login successful');
+            console.log('Redirect URL:', data.redirect_url);
+            
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            // Redirect after short delay
+            setTimeout(() => {
+                if (IS_IFRAME && RETURN_URL.includes('/payment/')) {
+                    // In iframe and payment flow - try to update parent
+                    console.log('📤 Notifying parent of login');
+                    try {
+                        window.parent.postMessage({
+                            type: 'login_success',
+                            email: formData.get('email')
+                        }, '*');
+                    } catch (e) {
+                        console.error('Failed to notify parent:', e);
+                    }
+                }
+                
+                // Navigate to redirect URL
+                console.log('🔄 Redirecting to:', data.redirect_url);
+                window.location.href = data.redirect_url;
+            }, 500);
+        } else {
+            console.error('❌ Login failed:', data.error);
+            
+            let errorMessage = data.error || 'Login failed';
+            
+            // Show attempts remaining if available
+            if (data.attempts_remaining !== undefined) {
+                errorMessage += ` (${data.attempts_remaining} attempts remaining)`;
+            }
+            
+            showError(errorMessage);
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Login';
+            
+            // Clear PIN on error
+            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+        }
+    } catch (error) {
+        console.error('❌ Network error:', error);
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Login';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        errorMsg.classList.add('hidden');
+    }, 5000);
+}
+
+// Notify parent that page is ready
+if (IS_IFRAME) {
+    window.addEventListener('load', function() {
+        try {
+            window.parent.postMessage({
+                type: 'pin_login_ready'
+            }, '*');
+        } catch (e) {
+            console.error('Failed to notify parent:', e);
+        }
+    });
+}
+</script>
+{% endblock %}

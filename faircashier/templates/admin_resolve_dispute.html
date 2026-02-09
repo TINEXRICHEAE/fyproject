@@ -1,0 +1,175 @@
+<!-- templates/admin_resolve_dispute.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Resolve Dispute - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">gavel</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Resolve Dispute</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">ID: {{ dispute.dispute_id }}</p>
+    </div>
+
+    <!-- Dispute Details -->
+    <div class="border-2 border-white p-6 mb-6">
+        <h2 class="text-sm font-black uppercase tracking-widest text-white/70 mb-4">Dispute Information</h2>
+        
+        <div class="space-y-4">
+            <!-- Amount -->
+            <div class="border-b-2 border-white/10 pb-4">
+                <p class="text-xs font-black uppercase text-white/50">Amount</p>
+                <p class="text-2xl font-black text-primary">{{ dispute.payment_request_item.amount|floatformat:0 }} UGX</p>
+            </div>
+
+            <!-- Parties -->
+            <div class="grid grid-cols-2 gap-4 border-b-2 border-white/10 pb-4">
+                <div>
+                    <p class="text-xs font-black uppercase text-white/50">Buyer</p>
+                    <p class="text-sm font-bold text-white">{{ dispute.buyer.email }}</p>
+                </div>
+                <div>
+                    <p class="text-xs font-black uppercase text-white/50">Seller</p>
+                    <p class="text-sm font-bold text-white">{{ dispute.seller.email }}</p>
+                </div>
+            </div>
+
+            <!-- Reason -->
+            <div class="border-b-2 border-white/10 pb-4">
+                <p class="text-xs font-black uppercase text-white/50">Reason</p>
+                <p class="text-sm font-black text-white">{{ dispute.reason }}</p>
+            </div>
+
+            <!-- Description -->
+            <div>
+                <p class="text-xs font-black uppercase text-white/50">Description</p>
+                <p class="text-sm font-bold text-white/70">{{ dispute.description }}</p>
+            </div>
+
+            <!-- Filed Date -->
+            <div>
+                <p class="text-xs font-black uppercase text-white/50">Filed</p>
+                <p class="text-sm font-bold text-white">{{ dispute.created_at|date:"M d, Y H:i" }}</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resolution Form -->
+    <form id="resolutionForm" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Resolution Decision -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Resolution Decision
+            </label>
+            <div class="space-y-3">
+                <label class="flex items-center border-2 border-white p-4 cursor-pointer hover:bg-white hover:text-black transition-colors">
+                    <input type="radio" name="resolution" value="approve_refund" class="mr-3" required/>
+                    <div>
+                        <p class="text-sm font-black uppercase">Approve Refund</p>
+                        <p class="text-xs font-bold text-white/70">Refund {{ dispute.payment_request_item.amount|floatformat:0 }} UGX to buyer</p>
+                    </div>
+                </label>
+                <label class="flex items-center border-2 border-white p-4 cursor-pointer hover:bg-white hover:text-black transition-colors">
+                    <input type="radio" name="resolution" value="reject" class="mr-3"/>
+                    <div>
+                        <p class="text-sm font-black uppercase">Reject Dispute</p>
+                        <p class="text-xs font-bold text-white/70">Keep funds with seller</p>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <!-- Admin Notes -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Admin Notes
+            </label>
+            <textarea 
+                name="admin_notes"
+                rows="4"
+                placeholder="Enter resolution notes..."
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            ></textarea>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Submit Resolution
+        </button>
+    </form>
+
+    <!-- Back Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <a href="/disputes/" class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Disputes
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('resolutionForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/dispute/{{ dispute.dispute_id }}/resolve/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showStatus('Dispute resolved successfully!', 'success');
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            setTimeout(() => {
+                window.location.href = '/disputes/';
+            }, 2000);
+        } else {
+            showStatus(data.error || 'Resolution failed', 'error');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit Resolution';
+        }
+    } catch (error) {
+        showStatus('Network error', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Submit Resolution';
+    }
+});
+
+function showStatus(message, type) {
+    const statusMsg = document.getElementById('statusMsg');
+    statusMsg.textContent = message;
+    statusMsg.classList.remove('hidden', 'bg-white', 'bg-primary', 'text-black', 'text-white');
+    
+    if (type === 'error') {
+        statusMsg.classList.add('bg-white', 'text-black');
+    } else {
+        statusMsg.classList.add('bg-primary', 'text-black');
+    }
+}
+</script>
+{% endblock %}

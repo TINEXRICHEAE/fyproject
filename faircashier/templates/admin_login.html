@@ -1,0 +1,118 @@
+<!-- templates/admin_login.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Admin Login - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">admin_panel_settings</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Admin Portal</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Fair Cashier</p>
+    </div>
+
+    <!-- Login Form -->
+    <form id="adminLoginForm" class="space-y-6">
+        {% csrf_token %}
+        <!-- Email -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Email
+            </label>
+            <input 
+                type="email" 
+                id="email" 
+                name="email"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+                autofocus
+            />
+        </div>
+
+        <!-- Password -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Password
+            </label>
+            <input 
+                type="password" 
+                id="password" 
+                name="password"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Login
+        </button>
+    </form>
+
+    <!-- Register Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <p class="text-xs font-bold text-white/70 uppercase">
+            Need an admin account?
+            <a href="/register/" class="text-primary underline decoration-2">Register Here</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('adminLoginForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Logging in...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/login/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            setTimeout(() => {
+                window.location.href = data.redirect_url;
+            }, 300);
+        } else {
+            showError(data.error || 'Login failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Login';
+        }
+    } catch (error) {
+        showError('Network error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Login';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}

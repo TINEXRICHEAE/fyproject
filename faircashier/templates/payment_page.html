@@ -406,6 +406,17 @@
         
         // Process payment
         processPayment(requestId);
+
+        // After successful payment
+        if (response.ok) {
+            // Send message to parent window (e-commerce app)
+            window.parent.postMessage({
+                type: 'payment_success',
+                request_id: requestId,
+                transaction_id: data.transaction_id,
+                amount: data.amount
+            }, '*');  // In production, specify exact origin
+        }
     }
     
     function cancelPayment() {

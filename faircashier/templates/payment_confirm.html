@@ -1,0 +1,179 @@
+<!-- templates/payment_confirm.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Confirm Payment - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">receipt_long</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Confirm Payment</h1>
+    </div>
+
+    <!-- Payment Details -->
+    <div class="border-2 border-white p-6 mb-6">
+        <h2 class="text-sm font-black uppercase tracking-widest text-white/70 mb-4">Order Summary</h2>
+        
+        <!-- Items List -->
+        <div class="space-y-3 mb-4">
+            {% for item in items %}
+            <div class="flex justify-between items-start pb-3 border-b-2 border-white/10">
+                <div class="flex-1">
+                    <p class="text-sm font-black text-white">{{ item.seller_email }}</p>
+                    <p class="text-xs font-bold text-white/70 mt-1">{{ item.product_description }}</p>
+                </div>
+                <p class="text-sm font-black text-primary ml-4">{{ item.amount }} UGX</p>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Total -->
+        <div class="flex justify-between items-center pt-4 border-t-2 border-white">
+            <p class="text-lg font-black uppercase text-white">Total Amount</p>
+            <p class="text-3xl font-black text-primary">{{ payment_request.total_amount }} UGX</p>
+        </div>
+    </div>
+
+    <!-- Buyer Info -->
+    <div class="border-2 border-white p-4 mb-6">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Buyer Email</p>
+        <p class="text-sm font-black text-white">{{ payment_request.buyer_email }}</p>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="space-y-4">
+        <button 
+            id="confirmBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors">
+            Confirm & Continue
+        </button>
+        
+        <button 
+            onclick="window.history.back()"
+            class="w-full border-2 border-white text-white py-4 text-sm font-black uppercase hover:bg-white hover:text-black transition-colors">
+            Cancel
+        </button>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="hidden fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div class="bg-white p-6 rounded-lg text-center">
+            <div class="spinner mx-auto mb-4"></div>
+            <p class="text-black font-bold">Checking account...</p>
+        </div>
+    </div>
+
+    <!-- Security Info -->
+    <div class="border-2 border-white p-4 mt-6">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">🔒 Secure Checkout</p>
+        <ul class="text-xs font-bold text-white/70 space-y-1">
+            <li>• Encrypted payment processing</li>
+            <li>• Your funds are protected</li>
+            <li>• Instant payment confirmation</li>
+        </ul>
+    </div>
+</div>
+
+<style>
+.spinner {
+    border: 4px solid #f3f3f3;
+    border-top: 4px solid #00FF00;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+    .w-full.max-w-2xl {
+        padding: 0 1rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BUYER_EMAIL = '{{ payment_request.buyer_email }}';
+const REQUEST_ID = '{{ payment_request.request_id }}';
+const RETURN_URL = `/payment/${REQUEST_ID}/`;
+
+async function checkBuyerStatus() {
+    try {
+        const response = await fetch(`/api/check-buyer-status/?email=${encodeURIComponent(BUYER_EMAIL)}`);
+        const data = await response.json();
+        
+        console.log('Buyer status:', data);
+        
+        if (data.is_locked) {
+            alert('Account is temporarily locked. Please try again later.');
+            return null;
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('Error checking buyer status:', error);
+        // Default to setup on error
+        return {
+            exists: false,
+            has_pin: false,
+            action: 'pin_setup'
+        };
+    }
+}
+
+document.getElementById('confirmBtn').addEventListener('click', async function() {
+    // Show loading
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    this.disabled = true;
+    
+    try {
+        const status = await checkBuyerStatus();
+        
+        if (!status) {
+            document.getElementById('loadingOverlay').classList.add('hidden');
+            this.disabled = false;
+            return;
+        }
+        
+        let redirectUrl;
+        
+        if (status.exists && status.has_pin) {
+            // User exists with PIN - go to PIN login
+            redirectUrl = `/pin-login/?email=${encodeURIComponent(BUYER_EMAIL)}&return=${encodeURIComponent(RETURN_URL)}`;
+        } else {
+            // User doesn't exist or no PIN - go to PIN setup
+            redirectUrl = `/pin-setup/?email=${encodeURIComponent(BUYER_EMAIL)}&return=${encodeURIComponent(RETURN_URL)}`;
+        }
+        
+        console.log('Redirecting to:', redirectUrl);
+        window.location.href = redirectUrl;
+        
+    } catch (error) {
+        console.error('Confirmation error:', error);
+        alert('An error occurred. Please try again.');
+        document.getElementById('loadingOverlay').classList.add('hidden');
+        this.disabled = false;
+    }
+});
+
+// Prevent double-click
+let processing = false;
+document.getElementById('confirmBtn').addEventListener('click', function() {
+    if (processing) {
+        return false;
+    }
+    processing = true;
+    setTimeout(() => { processing = false; }, 3000);
+});
+</script>
+{% endblock %}

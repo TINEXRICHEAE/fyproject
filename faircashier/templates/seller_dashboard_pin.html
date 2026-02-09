@@ -1,0 +1,229 @@
+<!-- templates/seller_dashboard_pin.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Seller Dashboard - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">store</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Seller Dashboard</h1>
+    </div>
+
+    <!-- Email Display -->
+    <div class="mb-6 border-2 border-white p-4">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-1">Account</p>
+        <p class="text-sm font-black text-white">{{ email }}</p>
+    </div>
+
+    <!-- PIN Entry -->
+    <form id="dashboardForm" class="space-y-6 mb-8">
+        <input type="hidden" name="email" value="{{ email }}"/>
+        
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            View Dashboard
+        </button>
+    </form>
+
+    <!-- Dashboard Content (Hidden Initially) -->
+    <div id="dashboardContent" class="hidden space-y-6">
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 gap-4">
+            <!-- Balance -->
+            <div class="border-2 border-white p-4">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Balance</p>
+                <p class="text-2xl font-black text-primary" id="balance">0.00</p>
+                <p class="text-xs font-bold text-white/70 uppercase mt-1" id="currency">UGX</p>
+            </div>
+            
+            <!-- Total Sales -->
+            <div class="border-2 border-primary bg-primary p-4">
+                <p class="text-xs font-black uppercase tracking-widest text-black/70 mb-2">Total Sales</p>
+                <p class="text-2xl font-black text-black" id="totalSales">0.00</p>
+                <p class="text-xs font-bold text-black/70 uppercase mt-1">All Time</p>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="grid grid-cols-2 gap-4">
+            <a href="/cashout-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">arrow_upward</span>
+                    <p class="text-xs font-black uppercase">Cashout</p>
+                </div>
+            </a>
+            <a href="/wallet-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">wallet</span>
+                    <p class="text-xs font-black uppercase">Wallet</p>
+                </div>
+            </a>
+        </div>
+
+        <!-- Recent Sales -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-3 border-b-2 border-black flex justify-between items-center">
+                <p class="text-xs font-black uppercase text-black">Recent Sales</p>
+                <span class="material-symbols-outlined text-black text-sm">trending_up</span>
+            </div>
+            <div id="transactions" class="divide-y-2 divide-white/10">
+                <p class="p-4 text-xs font-bold text-white/70 text-center">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Payment Items -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-3 border-b-2 border-black flex justify-between items-center">
+                <p class="text-xs font-black uppercase text-black">Payment Items</p>
+                <span class="material-symbols-outlined text-black text-sm">receipt_long</span>
+            </div>
+            <div id="items" class="divide-y-2 divide-white/10">
+                <p class="p-4 text-xs font-bold text-white/70 text-center">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// PIN input auto-focus (same as buyer dashboard)
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function(e) {
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+        if (index === 3 && this.value) {
+            document.getElementById('dashboardForm').dispatchEvent(new Event('submit'));
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+});
+
+document.getElementById('pin1').focus();
+
+document.getElementById('dashboardForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    if (pin.length !== 4) {
+        showError('Enter complete PIN');
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Loading...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Display stats
+            document.getElementById('balance').textContent = parseFloat(data.wallet.balance).toLocaleString();
+            document.getElementById('currency').textContent = data.wallet.currency;
+            document.getElementById('totalSales').textContent = parseFloat(data.total_sales).toLocaleString();
+            
+            // Display transactions
+            const txDiv = document.getElementById('transactions');
+            if (data.transactions && data.transactions.length > 0) {
+                txDiv.innerHTML = data.transactions.map(tx => `
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase text-primary">Sale</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">${new Date(tx.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <p class="text-sm font-black text-primary">+${parseFloat(tx.amount).toLocaleString()}</p>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                txDiv.innerHTML = '<p class="p-4 text-xs font-bold text-white/70 text-center">No sales yet</p>';
+            }
+            
+            // Display items
+            const itemsDiv = document.getElementById('items');
+            if (data.items && data.items.length > 0) {
+                itemsDiv.innerHTML = data.items.map(item => `
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div class="flex-1">
+                                <p class="text-xs font-black uppercase">${item.description || 'Item'}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">ID: ${item.id}</p>
+                            </div>
+                            <p class="text-sm font-black text-primary">${parseFloat(item.amount).toLocaleString()}</p>
+                        </div>
+                    </div>
+                `).join('');
+            } else {
+                itemsDiv.innerHTML = '<p class="p-4 text-xs font-bold text-white/70 text-center">No items yet</p>';
+            }
+            
+            // Show dashboard
+            document.getElementById('dashboardContent').classList.remove('hidden');
+            this.classList.add('hidden');
+        } else {
+            showError(data.error || 'Invalid PIN');
+            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'View Dashboard';
+        }
+    } catch (error) {
+        showError('Network error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'View Dashboard';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}

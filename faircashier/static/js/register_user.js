@@ -12,6 +12,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const messageBox = document.getElementById('messageBox');
   const submitButton = form.querySelector('.btn');
 
+
+    // Auto-focus password if email is pre-filled
+    if (prefillEmail && emailInput.value) {
+      passwordInput.focus();
+    }
+
+
   // Password validation rules
   const passwordRules = {
     length: /.{8,}/,

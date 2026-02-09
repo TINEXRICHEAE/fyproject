@@ -1,0 +1,185 @@
+<!-- templates/payment_page_pin.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Complete Payment{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="border-b-2 border-white pb-4 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-black uppercase tracking-widest text-white/70">Total Amount</p>
+                <h1 class="text-3xl font-black text-primary">{{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}</h1>
+            </div>
+            <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                <span class="material-symbols-outlined text-black font-black text-2xl">lock</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Summary -->
+    <div class="border-2 border-white mb-6">
+        <div class="bg-white p-3 border-b-2 border-black">
+            <p class="text-xs font-black uppercase text-black">Items</p>
+        </div>
+        <div class="p-3 space-y-2">
+            {% for item in items %}
+            <div class="flex justify-between text-xs">
+                <span class="font-bold text-white">{{ item.seller_email }}</span>
+                <span class="font-black text-primary">{{ item.amount|floatformat:0 }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Wallet Balance -->
+    <div class="border-2 border-white mb-6 p-3">
+        <div class="flex justify-between items-center">
+            <span class="text-xs font-black uppercase text-white/70">Your Balance</span>
+            <span class="text-lg font-black text-white">{{ wallet.balance|floatformat:0 }} {{ wallet.currency }}</span>
+        </div>
+    </div>
+
+    {% if wallet.balance >= payment_request.total_amount %}
+    <!-- PIN Entry -->
+    <form id="paymentForm" class="space-y-6">
+        <input type="hidden" name="email" value="{{ payment_request.buyer_email }}"/>
+        
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN to Confirm
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="payBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
+        </button>
+    </form>
+    {% else %}
+    <!-- Insufficient Balance -->
+    <div class="border-2 border-white bg-white p-6 text-center">
+        <p class="text-xs font-black uppercase text-black mb-4">Insufficient Balance</p>
+        <p class="text-xs font-bold text-black/70">
+            Need {{ payment_request.total_amount|floatformat:0 }} but have {{ wallet.balance|floatformat:0 }}
+        </p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-focus PIN inputs
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function(e) {
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+        
+        // Auto-submit when complete
+        if (index === 3 && this.value) {
+            document.getElementById('paymentForm').dispatchEvent(new Event('submit'));
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+});
+
+document.getElementById('pin1')?.focus();
+
+// Payment Form
+document.getElementById('paymentForm')?.addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    if (pin.length !== 4) {
+        showStatus('Enter complete PIN', 'error');
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    
+    const payBtn = document.getElementById('payBtn');
+    payBtn.disabled = true;
+    payBtn.textContent = 'Processing...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/payment/{{ payment_request.request_id }}/process-pin/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            payBtn.textContent = 'Success!';
+            payBtn.classList.remove('bg-primary');
+            payBtn.classList.add('bg-white');
+            
+            // Notify parent iframe
+            window.parent.postMessage({
+                type: 'payment_success',
+                request_id: '{{ payment_request.request_id }}',
+                amount: '{{ payment_request.total_amount }}'
+            }, '*');
+            
+            showStatus('Payment Successful!', 'success');
+        } else {
+            showStatus(data.error || 'Payment failed', 'error');
+            
+            // Clear PIN
+            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+            
+            payBtn.disabled = false;
+            payBtn.textContent = 'Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}';
+        }
+    } catch (error) {
+        showStatus('Network error', 'error');
+        payBtn.disabled = false;
+        payBtn.textContent = 'Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}';
+    }
+});
+
+function showStatus(message, type) {
+    const statusMsg = document.getElementById('statusMsg');
+    statusMsg.textContent = message;
+    statusMsg.classList.remove('hidden', 'bg-white', 'bg-primary');
+    
+    if (type === 'error') {
+        statusMsg.classList.add('bg-white');
+        statusMsg.style.color = 'black';
+    } else {
+        statusMsg.classList.add('bg-primary');
+        statusMsg.style.color = 'black';
+    }
+}
+</script>
+{% endblock %}

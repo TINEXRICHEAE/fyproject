@@ -104,6 +104,22 @@ class Users(AbstractBaseUser, PermissionsMixin):
     admin_email = models.EmailField(max_length=50, blank=True, null=True)
     platform_domain = models.EmailField(max_length=50, blank=True, null=True)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
+    # PIN authentication for buyers/sellers
+    pin = models.CharField(
+        max_length=255, 
+        blank=True, 
+        null=True,
+        help_text="Hashed 4-digit PIN for transaction authentication"
+    )
+    pin_attempts = models.IntegerField(
+        default=0,
+        help_text="Failed PIN attempts counter"
+    )
+    pin_locked_until = models.DateTimeField(
+        null=True, 
+        blank=True,
+        help_text="PIN locked until this timestamp"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)

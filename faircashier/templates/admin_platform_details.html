@@ -1,0 +1,172 @@
+<!-- templates/admin_platform_details.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Platform Details - Fair Cashier</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                        "secondary-bg": "#FFFFFF",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "none": "0", "sm": "0", "DEFAULT": "0", "lg": "0", "xl": "0", "full": "0"
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+        }
+        * { box-shadow: none !important; text-shadow: none !important; }
+    </style>
+</head>
+<body class="min-h-screen bg-background-dark text-white">
+    <!-- Header -->
+    <header class="border-b-2 border-white p-6">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-black font-black text-2xl">business</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black uppercase tracking-tighter">{{ platform.platform_name }}</h1>
+                    <p class="text-xs font-bold text-white/70 uppercase">Platform Details</p>
+                </div>
+            </div>
+            <a href="/admin-dashboard/">
+                <button class="border-2 border-white px-6 py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    ← Dashboard
+                </button>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- Platform Info -->
+        <div class="grid md:grid-cols-2 gap-6 mb-8">
+            <!-- Basic Info -->
+            <div class="border-2 border-white p-6">
+                <h2 class="text-sm font-black uppercase tracking-widest text-white/70 mb-4">Platform Information</h2>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Platform ID</p>
+                        <p class="text-sm font-bold text-white">{{ platform.platform_id }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Domain</p>
+                        <p class="text-sm font-bold text-white">{{ platform.domain }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Provider</p>
+                        <p class="text-sm font-bold text-primary">{{ platform.get_mobile_money_provider_display }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Status</p>
+                        <p class="text-sm font-bold {% if platform.is_active %}text-primary{% else %}text-white/50{% endif %}">
+                            {{ platform.is_active|yesno:"ACTIVE,INACTIVE" }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Keys -->
+            <div class="border-2 border-primary bg-primary p-6">
+                <h2 class="text-sm font-black uppercase tracking-widest text-black/70 mb-4">API Configuration</h2>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-xs font-black uppercase text-black/50">API Key</p>
+                        <div class="bg-white border-2 border-black p-2 mt-1">
+                            <code class="text-xs font-bold text-black break-all">{{ platform.api_key }}</code>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-black/50">Return URL</p>
+                        <p class="text-xs font-bold text-black">{{ platform.return_url }}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-black/50">Callback URL</p>
+                        <p class="text-xs font-bold text-black">{{ platform.callback_url }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transactions -->
+        <div class="border-2 border-white mb-6">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase text-black">Recent Transactions</h2>
+                <span class="material-symbols-outlined text-black">receipt_long</span>
+            </div>
+            <div class="divide-y-2 divide-white/10">
+                {% if transactions %}
+                    {% for tx in transactions %}
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ tx.transaction_type }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ tx.created_at|date:"M d, Y H:i" }}</p>
+                                <p class="text-xs font-bold text-white/50">ID: {{ tx.transaction_id }}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-black text-primary">{{ tx.amount|floatformat:0 }} UGX</p>
+                                <p class="text-xs font-bold text-white/50 mt-1 uppercase">{{ tx.status }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <p class="p-8 text-center text-sm font-bold text-white/70">No transactions yet</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Payment Requests -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase text-black">Payment Requests</h2>
+                <span class="material-symbols-outlined text-black">payments</span>
+            </div>
+            <div class="divide-y-2 divide-white/10">
+                {% if payment_requests %}
+                    {% for payment in payment_requests %}
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ payment.buyer_email }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ payment.created_at|date:"M d, Y H:i" }}</p>
+                                <p class="text-xs font-bold text-white/50">ID: {{ payment.request_id }}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm font-black text-primary">{{ payment.total_amount|floatformat:0 }} UGX</p>
+                                <p class="text-xs font-bold text-white/50 mt-1 uppercase">{{ payment.status }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <p class="p-8 text-center text-sm font-bold text-white/70">No payment requests yet</p>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+</body>
+</html>

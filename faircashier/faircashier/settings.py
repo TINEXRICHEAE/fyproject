@@ -33,7 +33,60 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+# Add Security Headers manually for better control
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
 
+# Content Security Policy
+CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:8000"]  # E-commerce domain
+
+# CORS
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8000",  # E-commerce app
+    "http://127.0.0.1:8000",
+]
+
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000', 
+                        'http://localhost:8000',
+                        'http://127.0.0.1:8001', 
+                        'http://localhost:8001',
+                        ]
+
+
+
+# CSRF Configuration for Cross-Domain Access
+CSRF_COOKIE_NAME = 'faircashier_csrftoken'  # Unique name
+CSRF_COOKIE_DOMAIN = None
+CSRF_COOKIE_SAMESITE = 'Lax'  
+CSRF_COOKIE_SECURE = False  # Set to True in production
+CSRF_COOKIE_HTTPONLY = False  # Must be False for JavaScript access
+
+
+# Allow iframe embedding
+X_FRAME_OPTIONS = 'ALLOWALL'  # Or use ALLOW-FROM if you want to be specific
+
+# Session Configuration for Cross-Domain Access
+SESSION_COOKIE_NAME = 'faircashier_sessionid'  # Unique name to avoid conflicts
+SESSION_COOKIE_DOMAIN = None  # Don't set domain for localhost
+SESSION_COOKIE_HTTPONLY = True  # Keep for security
+SESSION_SAVE_EVERY_REQUEST = True  # Ensure session is saved
+
+SESSION_COOKIE_SAMESITE = 'Lax'  # Change from None to Lax
+SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
 # Application definition
 
 INSTALLED_APPS = [
@@ -45,6 +98,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Third-party apps
     'guardian',
+    'corsheaders',
     # Your apps...
     'cashingapp',
 
@@ -53,6 +107,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -91,6 +146,9 @@ DATABASES = {
 
 AUTH_USER_MODEL = 'cashingapp.Users'
 
+
+LOGIN_URL = 'login_user'
+
 AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
     'cashingapp.backends.EmailBackend',
@@ -117,6 +175,15 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+]
+
+
+
+# Password hashers (Argon2 first for PIN security)
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',  # ← Strongest for PINs
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.BCryptPasswordHasher',
 ]
 
 

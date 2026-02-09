@@ -1,0 +1,214 @@
+<!-- templates/cashout_pin.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Cashout - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">arrow_upward</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Cashout Funds</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Mobile Money</p>
+    </div>
+
+    <!-- Cashout Form -->
+    <form id="cashoutForm" class="space-y-6">
+        <input type="hidden" name="email" value="{{ email }}"/>
+        
+        <!-- Amount -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Amount (UGX)
+            </label>
+            <input 
+                type="number" 
+                id="amount" 
+                name="amount"
+                min="5000"
+                step="100"
+                placeholder="Enter amount"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">Minimum: 5,000 UGX</p>
+        </div>
+
+        <!-- Phone Number -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Mobile Money Number
+            </label>
+            <input 
+                type="tel" 
+                id="phone_number" 
+                name="phone_number"
+                placeholder="256700000000"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+        </div>
+
+        <!-- Platform Selection -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Provider
+            </label>
+            <select 
+                id="platform_id" 
+                name="platform_id"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            >
+                {% for platform in platforms %}
+                <option value="{{ platform.platform_id }}">
+                    {{ platform.get_mobile_money_provider_display }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN to Confirm
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Cashout Funds
+        </button>
+    </form>
+
+    <!-- Warning -->
+    <div class="border-2 border-white bg-white p-4 mt-6">
+        <p class="text-xs font-black uppercase tracking-widest text-black mb-2">⚠️ Important</p>
+        <ul class="text-xs font-bold text-black/70 space-y-2">
+            <li>• Ensure correct phone number</li>
+            <li>• Funds sent instantly</li>
+            <li>• Cannot reverse transaction</li>
+            <li>• Check your balance first</li>
+        </ul>
+    </div>
+
+    <!-- Back Link -->
+    <div class="text-center mt-6">
+        <a href="/wallet-pin/?email={{ email }}" class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Wallet
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// PIN input auto-focus
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function(e) {
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+});
+
+document.getElementById('cashoutForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    if (pin.length !== 4) {
+        showStatus('Enter complete PIN', 'error');
+        return;
+    }
+    
+    const amount = parseFloat(document.getElementById('amount').value);
+    if (!confirm(`Confirm cashout of ${amount.toLocaleString()} UGX?`)) {
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Processing...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showStatus('Cashout successful!', 'success');
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            setTimeout(() => {
+                window.location.href = `/wallet-pin/?email={{ email }}`;
+            }, 2000);
+        } else {
+            showStatus(data.error || 'Cashout failed', 'error');
+            
+            if (data.available) {
+                showStatus(`Insufficient balance. Available: ${parseFloat(data.available).toLocaleString()}`, 'error');
+            }
+            
+            // Clear PIN
+            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+            
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Cashout Funds';
+        }
+    } catch (error) {
+        showStatus('Network error', 'error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Cashout Funds';
+    }
+});
+
+function showStatus(message, type) {
+    const statusMsg = document.getElementById('statusMsg');
+    statusMsg.textContent = message;
+    statusMsg.classList.remove('hidden', 'bg-white', 'bg-primary', 'text-black', 'text-white');
+    
+    if (type === 'error') {
+        statusMsg.classList.add('bg-white', 'text-black');
+    } else {
+        statusMsg.classList.add('bg-primary', 'text-black');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,112 @@
+<!-- templates/superadmin_users.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>User Management - Fair Cashier</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                        "secondary-bg": "#FFFFFF",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "none": "0", "sm": "0", "DEFAULT": "0", "lg": "0", "xl": "0", "full": "0"
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <style>
+        @layer base {
+            body {
+                font-family: 'Manrope', sans-serif;
+                
+            }
+        }
+        * { box-shadow: none !important; text-shadow: none !important; }
+    </style>
+</head>
+<body class="min-h-screen bg-background-dark text-white font-display">
+    <!-- Header -->
+    <header class="border-b-2 border-white p-6">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-black font-black text-2xl">group</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black uppercase tracking-tighter">User Management</h1>
+                    <p class="text-xs font-bold text-white/70 uppercase">All Registered Users</p>
+                </div>
+            </div>
+            <a href="/superadmin-dashboard/">
+                <button class="border-2 border-white px-6 py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    ← Dashboard
+                </button>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- Users List -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase text-black">All Users</h2>
+                <span class="material-symbols-outlined text-black">list</span>
+            </div>
+            <div class="divide-y-2 divide-white/10">
+                {% for user in users %}
+                <a href="/user/{{ user.id }}/" class="block p-4 hover:bg-white hover:text-black transition-colors">
+                    <div class="flex justify-between items-center">
+                        <div class="flex-1">
+                            <p class="text-sm font-black">{{ user.email }}</p>
+                            <div class="flex gap-3 mt-2">
+                                <p class="text-xs font-bold text-white/50">
+                                    <span class="
+                                        {% if user.role == 'buyer' %}text-primary
+                                        {% elif user.role == 'seller' %}text-white
+                                        {% elif user.role == 'admin' %}text-white
+                                        {% elif user.role == 'superadmin' %}text-primary
+                                        {% endif %} uppercase font-black">
+                                        {{ user.role }}
+                                    </span>
+                                </p>
+                                {% if user.phone_number %}
+                                <p class="text-xs font-bold text-white/50">{{ user.phone_number }}</p>
+                                {% endif %}
+                                <p class="text-xs font-bold text-white/50">{{ user.created_at|date:"M d, Y" }}</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-xs font-black uppercase 
+                                {% if user.is_active %}text-primary{% else %}text-white/50{% endif %}">
+                                {{ user.is_active|yesno:"ACTIVE,INACTIVE" }}
+                            </p>
+                            {% if user.pin %}
+                            <p class="text-xs font-bold text-white/50 mt-1">PIN SET</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</body>
+</html>

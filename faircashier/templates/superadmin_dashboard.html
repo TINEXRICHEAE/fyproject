@@ -1,370 +1,192 @@
-{% extends 'base.html' %}
-
-{% block title %}Superadmin Dashboard - Fair Cashier{% endblock %}
-
-{% block content %}
-<div class="dashboard-header">
-    <h1>Superadmin Dashboard</h1>
-    <p>System Overview & Management</p>
-</div>
-
-<!-- System Statistics Cards -->
-<div class="dashboard-grid">
-    <div class="card stat-card">
-        <div class="stat-icon">👥</div>
-        <div class="stat-info">
-            <h3>Total Users</h3>
-            <p class="stat-number">{{ total_users }}</p>
-        </div>
-    </div>
+<!-- templates/superadmin_dashboard.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Superadmin Dashboard - Fair Cashier</title>
     
-    <div class="card stat-card">
-        <div class="stat-icon">🏪</div>
-        <div class="stat-info">
-            <h3>Total Platforms</h3>
-            <p class="stat-number">{{ total_platforms }}</p>
-        </div>
-    </div>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     
-    <div class="card stat-card">
-        <div class="stat-icon">💰</div>
-        <div class="stat-info">
-            <h3>Total Wallets</h3>
-            <p class="stat-number">{{ total_wallets }}</p>
-        </div>
-    </div>
-    
-    <div class="card stat-card">
-        <div class="stat-icon">🔄</div>
-        <div class="stat-info">
-            <h3>Total Transactions</h3>
-            <p class="stat-number">{{ total_transactions }}</p>
-        </div>
-    </div>
-</div>
-
-<!-- Total Volume Card -->
-<div class="card volume-card">
-    <h2>Total Transaction Volume</h2>
-    <div class="volume-amount">
-        <span class="currency">UGX</span>
-        <span class="amount">{{ total_volume|floatformat:2 }}</span>
-    </div>
-</div>
-
-<!-- Recent Platforms -->
-<div class="card">
-    <div class="card-header-flex">
-        <h2>Recent Platforms</h2>
-        <a href="#" class="btn btn-sm btn-secondary">View All</a>
-    </div>
-    <div class="table-responsive">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Platform Name</th>
-                    <th>Admin</th>
-                    <th>Domain</th>
-                    <th>Status</th>
-                    <th>Created</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for platform in recent_platforms %}
-                <tr>
-                    <td><strong>{{ platform.platform_name }}</strong></td>
-                    <td>{{ platform.admin.email }}</td>
-                    <td><a href="{{ platform.domain }}" target="_blank">{{ platform.domain|truncatechars:30 }}</a></td>
-                    <td>
-                        {% if platform.is_active %}
-                        <span class="badge badge-completed">Active</span>
-                        {% else %}
-                        <span class="badge badge-failed">Inactive</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ platform.created_at|date:"M d, Y" }}</td>
-                    <td>
-                        <a href="{% url 'platform_details' platform.platform_id %}" class="btn-link">Details</a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="6" class="text-center">No platforms registered</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- Recent Users -->
-<div class="card">
-    <div class="card-header-flex">
-        <h2>Recent Users</h2>
-        <a href="/admin/cashingapp/users/" class="btn btn-sm btn-secondary">View All</a>
-    </div>
-    <div class="table-responsive">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Phone</th>
-                    <th>Status</th>
-                    <th>Joined</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for user in recent_users %}
-                <tr>
-                    <td>{{ user.email }}</td>
-                    <td><span class="badge badge-{{ user.role }}">{{ user.get_role_display }}</span></td>
-                    <td>{{ user.phone_number|default:"-" }}</td>
-                    <td>
-                        {% if user.is_active %}
-                        <span class="status-indicator status-active"></span> Active
-                        {% else %}
-                        <span class="status-indicator status-inactive"></span> Inactive
-                        {% endif %}
-                    </td>
-                    <td>{{ user.created_at|date:"M d, Y" }}</td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="5" class="text-center">No users found</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- Recent Disputes -->
-<div class="card">
-    <div class="card-header-flex">
-        <h2>Recent Disputes</h2>
-        <span class="badge badge-warning">{{ recent_disputes.count }} Open</span>
-    </div>
-    <div class="table-responsive">
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Dispute ID</th>
-                    <th>Buyer</th>
-                    <th>Seller</th>
-                    <th>Amount</th>
-                    <th>Reason</th>
-                    <th>Status</th>
-                    <th>Date</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for dispute in recent_disputes %}
-                <tr>
-                    <td><strong>#{{ dispute.dispute_id }}</strong></td>
-                    <td>{{ dispute.buyer.email }}</td>
-                    <td>{{ dispute.seller.email }}</td>
-                    <td>{{ dispute.payment_request_item.amount }} UGX</td>
-                    <td>{{ dispute.get_reason_display }}</td>
-                    <td><span class="badge badge-{{ dispute.status }}">{{ dispute.get_status_display }}</span></td>
-                    <td>{{ dispute.created_at|date:"M d, Y" }}</td>
-                    <td>
-                        {% if dispute.status == 'escalated' %}
-                        <a href="{% url 'resolve_dispute' dispute.dispute_id %}" class="btn-link">Resolve</a>
-                        {% else %}
-                        <a href="#" class="btn-link">View</a>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="8" class="text-center">No disputes</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-
-<!-- System Health -->
-<div class="card">
-    <h2>System Health</h2>
-    <div class="health-grid">
-        <div class="health-item">
-            <div class="health-label">Database</div>
-            <div class="health-status status-active">Operational</div>
-        </div>
-        <div class="health-item">
-            <div class="health-label">API Services</div>
-            <div class="health-status status-active">Operational</div>
-        </div>
-        <div class="health-item">
-            <div class="health-label">Mobile Money</div>
-            <div class="health-status status-pending">Checking...</div>
-        </div>
-        <div class="health-item">
-            <div class="health-label">Email Service</div>
-            <div class="health-status status-active">Operational</div>
-        </div>
-    </div>
-</div>
-
-{% endblock %}
-
-{% block extra_css %}
-<style>
-    .dashboard-header {
-        margin-bottom: 30px;
-    }
-    
-    .dashboard-header h1 {
-        font-size: 2.5em;
-        color: #333;
-        margin-bottom: 10px;
-    }
-    
-    .dashboard-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 20px;
-        margin-bottom: 30px;
-    }
-    
-    .stat-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        display: flex;
-        align-items: center;
-        gap: 20px;
-        padding: 25px;
-    }
-    
-    .stat-card:nth-child(2) {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-    }
-    
-    .stat-card:nth-child(3) {
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-    }
-    
-    .stat-card:nth-child(4) {
-        background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-    }
-    
-    .stat-icon {
-        font-size: 3em;
-        opacity: 0.9;
-    }
-    
-    .stat-info h3 {
-        margin: 0;
-        font-size: 0.9em;
-        opacity: 0.9;
-        font-weight: normal;
-    }
-    
-    .stat-number {
-        font-size: 2.5em;
-        font-weight: bold;
-        margin: 5px 0 0 0;
-    }
-    
-    .volume-card {
-        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        color: white;
-        text-align: center;
-        padding: 40px;
-        margin-bottom: 30px;
-    }
-    
-    .volume-card h2 {
-        color: white;
-        margin-bottom: 20px;
-        font-size: 1.3em;
-        opacity: 0.9;
-    }
-    
-    .volume-amount {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-    
-    .volume-amount .currency {
-        font-size: 1.2em;
-        opacity: 0.8;
-    }
-    
-    .volume-amount .amount {
-        font-size: 3.5em;
-        font-weight: bold;
-    }
-    
-    .card-header-flex {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 20px;
-    }
-    
-    .card-header-flex h2 {
-        margin: 0;
-    }
-    
-    .btn-sm {
-        padding: 6px 15px;
-        font-size: 0.9em;
-    }
-    
-    .badge-buyer { background: #667eea; color: white; }
-    .badge-seller { background: #11998e; color: white; }
-    .badge-admin { background: #f5576c; color: white; }
-    .badge-superadmin { background: #764ba2; color: white; }
-    
-    .health-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 20px;
-        margin-top: 20px;
-    }
-    
-    .health-item {
-        padding: 20px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        text-align: center;
-    }
-    
-    .health-label {
-        font-weight: bold;
-        margin-bottom: 10px;
-        color: #666;
-    }
-    
-    .health-status {
-        padding: 8px 15px;
-        border-radius: 20px;
-        display: inline-block;
-        font-size: 0.9em;
-        font-weight: bold;
-    }
-    
-    .health-status.status-active {
-        background: #28a745;
-        color: white;
-    }
-    
-    .health-status.status-pending {
-        background: #ffc107;
-        color: #333;
-    }
-    
-    @media (max-width: 768px) {
-        .dashboard-grid {
-            grid-template-columns: 1fr;
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                        "secondary-bg": "#FFFFFF",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "none": "0", "sm": "0", "DEFAULT": "0", "lg": "0", "xl": "0", "full": "0"
+                    },
+                },
+            },
         }
-    }
-</style>
-{% endblock %}
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+            background-color: #000000;
+            color: white;
+        }
+        * { box-shadow: none !important; text-shadow: none !important; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Header -->
+    <header class="border-b-2 border-white p-6">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-black font-black text-2xl">shield</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black uppercase tracking-tighter">Superadmin Dashboard</h1>
+                    <p class="text-xs font-bold text-white/70 uppercase">{{ user.email }}</p>
+                </div>
+            </div>
+            <a href="/logout/">
+                <button class="border-2 border-white px-6 py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    Logout
+                </button>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- System Stats -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8">
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Total Users</p>
+                <p class="text-3xl font-black text-white">{{ stats.total_users }}</p>
+                <div class="flex gap-2 mt-2 text-xs font-bold">
+                    <span class="text-primary">{{ stats.total_buyers }} B</span>
+                    <span class="text-white/50">{{ stats.total_sellers }} S</span>
+                    <span class="text-white/50">{{ stats.total_admins }} A</span>
+                </div>
+            </div>
+            
+            <div class="border-2 border-primary bg-primary p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-black/70 mb-2">Total Volume</p>
+                <p class="text-3xl font-black text-black">{{ stats.total_volume|floatformat:0 }}</p>
+                <p class="text-xs font-bold text-black/70 uppercase">UGX</p>
+            </div>
+            
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Platforms</p>
+                <p class="text-3xl font-black text-white">{{ stats.total_platforms }}</p>
+            </div>
+            
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Transactions</p>
+                <p class="text-3xl font-black text-primary">{{ stats.total_transactions }}</p>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8">
+            <a href="/users/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">group</span>
+                    <p class="text-xs font-black uppercase">Manage Users</p>
+                </div>
+            </a>
+            <a href="/disputes/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">gavel</span>
+                    <p class="text-xs font-black uppercase">Disputes</p>
+                </div>
+            </a>
+            <a href="/transactions/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">receipt_long</span>
+                    <p class="text-xs font-black uppercase">Transactions</p>
+                </div>
+            </a>
+            <a href="#" class="block">
+                <div class="border-2 border-primary bg-primary p-6 text-center hover:bg-white transition-colors">
+                    <span class="material-symbols-outlined text-black text-3xl mb-2">analytics</span>
+                    <p class="text-xs font-black uppercase text-black">Analytics</p>
+                </div>
+            </a>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Recent Users -->
+            <div class="border-2 border-white">
+                <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                    <h2 class="text-sm font-black uppercase text-black">Recent Users</h2>
+                    <span class="material-symbols-outlined text-black">person_add</span>
+                </div>
+                <div class="divide-y-2 divide-white/10">
+                    {% for user in recent_users %}
+                    <a href="/user/{{ user.id }}/" class="block p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ user.email }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ user.created_at|date:"M d, Y" }}</p>
+                            </div>
+                            <p class="text-xs font-black uppercase text-primary">{{ user.role }}</p>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Recent Platforms -->
+            <div class="border-2 border-white">
+                <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                    <h2 class="text-sm font-black uppercase text-black">Recent Platforms</h2>
+                    <span class="material-symbols-outlined text-black">business</span>
+                </div>
+                <div class="divide-y-2 divide-white/10">
+                    {% for platform in recent_platforms %}
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ platform.platform_name }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ platform.domain }}</p>
+                            </div>
+                            <p class="text-xs font-black uppercase text-primary">{{ platform.admin.email }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="border-2 border-white mt-6">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase text-black">Recent Transactions</h2>
+                <span class="material-symbols-outlined text-black">sync_alt</span>
+            </div>
+            <div class="divide-y-2 divide-white/10">
+                {% for tx in recent_transactions %}
+                <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-xs font-black uppercase">{{ tx.transaction_type }}</p>
+                            <p class="text-xs font-bold text-white/50 mt-1">{{ tx.created_at|date:"M d, Y H:i" }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-black text-primary">{{ tx.amount|floatformat:0 }} UGX</p>
+                            <p class="text-xs font-bold text-white/50 mt-1 uppercase">{{ tx.status }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</body>
+</html>
