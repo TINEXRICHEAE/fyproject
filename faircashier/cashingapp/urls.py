@@ -5,7 +5,7 @@ from . import views
 from . import api_views
 from . import buyer_seller_views
 from . import admin_views
-
+from cashingapp.seller_proxy_urls import seller_proxy_urlpatterns
 urlpatterns = [
     # ============= HOME =============
     path('', views.home, name='home'),
@@ -19,7 +19,7 @@ urlpatterns = [
     
     # Dashboards (PIN-protected)
     path('buyer-dashboard/', buyer_seller_views.buyer_dashboard, name='buyer_dashboard'),
-    path('seller-dashboard/', buyer_seller_views.seller_dashboard, name='seller_dashboard'),
+    
     
     # Wallet Operations (PIN-protected)
     path('wallet-pin/', buyer_seller_views.wallet_view_pin, name='wallet_pin'),
@@ -74,4 +74,4 @@ urlpatterns = [
     
     # Transactions
     path('transactions/', admin_views.transactions_list, name='admin_transactions'),
-]
+] + seller_proxy_urlpatterns
