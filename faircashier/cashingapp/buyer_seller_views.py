@@ -15,7 +15,7 @@ import hashlib
 
 from .models import (
     Users, Wallet, PaymentRequest, Transaction, 
-    Platform, ActivityLog, PaymentRequestItem
+    Platform, ActivityLog, PaymentRequestItem, CashoutRequest
 )
 from .pin_auth import PINAuthenticator
 from .views import generate_confirmation_token
@@ -542,3 +542,337 @@ def cashout_pin(request):
         'email': email,
         'platforms': platforms
     })
+
+
+# ============= DEPOSIT AND PAY (SEAMLESS FLOW) =============
+# ADD this to the end of cashingapp/buyer_seller_views.py
+
+@csrf_exempt
+@xframe_options_exempt
+def deposit_and_pay(request, request_id):
+    """
+    Seamless deposit + payment in one step.
+    
+    When buyer has insufficient balance:
+    1. Calculates shortfall
+    2. Initiates mobile money deposit for the shortfall
+    3. Auto-completes deposit (simulated webhook)
+    4. Processes the payment with combined balance
+    5. Returns success to iframe
+    
+    POST body:
+        - email: Buyer's email
+        - pin: 4-digit PIN
+        - phone_number: Mobile money number for deposit
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+    
+    try:
+        data = request.POST
+        email = data.get('email')
+        pin = data.get('pin')
+        phone_number = data.get('phone_number')
+        
+        if not all([email, pin, phone_number]):
+            return JsonResponse({
+                'error': 'Email, PIN, and phone number are required'
+            }, status=400)
+        
+        # Get payment request
+        payment_request = PaymentRequest.objects.get(request_id=request_id)
+        
+        # Verify buyer identity
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorized'}, status=403)
+        
+        try:
+            buyer = Users.objects.get(email=email, role='buyer')
+        except Users.DoesNotExist:
+            return JsonResponse({'error': 'Buyer not found'}, status=404)
+        
+        # Verify PIN
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        
+        if not pin_result['valid']:
+            response_data = {'error': pin_result['error']}
+            if pin_result['attempts_remaining'] is not None:
+                response_data['attempts_remaining'] = pin_result['attempts_remaining']
+            return JsonResponse(response_data, status=401)
+        
+        # Calculate shortfall
+        buyer_wallet = buyer.wallet
+        shortfall = payment_request.total_amount - buyer_wallet.balance
+        
+        if shortfall > Decimal('0'):
+            # Need to deposit the shortfall first
+            platform = payment_request.platform
+            
+            if not platform:
+                return JsonResponse({
+                    'error': 'No payment platform configured'
+                }, status=400)
+            
+            from .payment_processor import process_deposit, complete_pending_deposit
+            
+            logger.info(
+                f"💰 Initiating deposit of {shortfall} UGX for {email} "
+                f"(balance: {buyer_wallet.balance}, needed: {payment_request.total_amount})"
+            )
+            
+            # Step 1: Initiate deposit
+            deposit_result = process_deposit(
+                user=buyer,
+                platform=platform,
+                amount=shortfall,
+                phone_number=phone_number
+            )
+            
+            if deposit_result['status'] != 'success':
+                logger.error(f"❌ Deposit failed for {email}: {deposit_result.get('message')}")
+                return JsonResponse({
+                    'error': deposit_result.get('message', 'Deposit failed. Please try again.'),
+                    'deposit_failed': True
+                }, status=400)
+            
+            # Step 2: Complete deposit (simulated webhook callback)
+            # In production, this would be triggered by the mobile money provider's webhook
+            completion_result = complete_pending_deposit(
+                transaction_id=deposit_result['transaction_id'],
+                external_reference=deposit_result['reference_id']
+            )
+            
+            if completion_result['status'] != 'success':
+                logger.error(f"❌ Deposit completion failed for {email}")
+                return JsonResponse({
+                    'error': 'Deposit could not be completed. Please try again.',
+                    'deposit_failed': True
+                }, status=400)
+            
+            logger.info(f"✅ Deposit of {shortfall} UGX completed for {email}")
+            
+            # Refresh wallet balance from DB
+            buyer_wallet.refresh_from_db()
+        
+        # Final balance check
+        if buyer_wallet.balance < payment_request.total_amount:
+            return JsonResponse({
+                'error': 'Insufficient balance even after deposit',
+                'required': str(payment_request.total_amount),
+                'available': str(buyer_wallet.balance)
+            }, status=400)
+        
+        # Step 3: Process the payment
+        with db_transaction.atomic():
+            for item in payment_request.items.all():
+                seller = Users.objects.get(email=item.seller_email, role='seller')
+                seller_wallet = seller.wallet
+                
+                transaction = Transaction.objects.create(
+                    platform=payment_request.platform,
+                    from_wallet=buyer_wallet,
+                    to_wallet=seller_wallet,
+                    amount=item.amount,
+                    transaction_type='transfer',
+                    status='completed',
+                    description=f'Payment: {item.product_description}'
+                )
+                
+                buyer_wallet.balance -= item.amount
+                seller_wallet.balance += item.amount
+                
+                buyer_wallet.save()
+                seller_wallet.save()
+                
+                item.transaction = transaction
+                item.save()
+            
+            payment_request.status = 'paid'
+            payment_request.save()
+        
+        logger.info(f"✅ Deposit+Pay completed for {email}: {request_id}")
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Payment successful',
+            'request_id': str(request_id),
+            'amount': str(payment_request.total_amount),
+            'deposited': str(max(shortfall, Decimal('0')))
+        })
+        
+    except PaymentRequest.DoesNotExist:
+        return JsonResponse({'error': 'Payment request not found'}, status=404)
+    except Exception as e:
+        logger.error(f"❌ Deposit+Pay error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Payment failed. Please try again.'}, status=500)
+    
+
+
+
+
+
+
+
+# ============= SELLER CASHOUT REQUEST =============
+
+
+@csrf_exempt
+@xframe_options_exempt
+def seller_request_cashout(request):
+    """
+    Seller cashout request form.
+    
+    Creates a CashoutRequest for the platform admin to review and disburse.
+    Seller selects payment method (MTN/Airtel/Bank) and provides details.
+    PIN verification required.
+    
+    GET params: email, platform_id
+    POST: amount, payment_method, phone_number/bank details, pin
+    """
+    email = request.GET.get('email', '')
+    platform_id = request.GET.get('platform_id', '')
+
+    if request.method == 'POST':
+        data = request.POST
+        email = data.get('email')
+        pin = data.get('pin')
+        amount_str = data.get('amount', '0')
+        payment_method = data.get('payment_method')
+        phone_number = data.get('phone_number', '').strip()
+        recipient_name = data.get('recipient_name', '').strip()
+        bank_name = data.get('bank_name', '').strip()
+        account_number = data.get('account_number', '').strip()
+        account_name = data.get('account_name', '').strip()
+        seller_note = data.get('seller_note', '').strip()
+        platform_id = data.get('platform_id')
+
+        if not all([email, pin, amount_str, payment_method, platform_id]):
+            return JsonResponse({
+                'error': 'All required fields must be filled'
+            }, status=400)
+
+        # Validate amount
+        try:
+            amount = Decimal(amount_str)
+        except Exception:
+            return JsonResponse({'error': 'Invalid amount'}, status=400)
+
+        if amount < Decimal('5000'):
+            return JsonResponse({
+                'error': 'Minimum cashout amount is 5,000 UGX'
+            }, status=400)
+
+        # Verify seller
+        try:
+            seller = Users.objects.get(email=email, role='seller')
+        except Users.DoesNotExist:
+            return JsonResponse({'error': 'Seller not found'}, status=404)
+
+        # Verify PIN
+        pin_result = PINAuthenticator.verify_pin(seller, pin)
+        if not pin_result['valid']:
+            response_data = {'error': pin_result['error']}
+            if pin_result['attempts_remaining'] is not None:
+                response_data['attempts_remaining'] = pin_result['attempts_remaining']
+            return JsonResponse(response_data, status=401)
+
+        # Verify platform
+        try:
+            platform = Platform.objects.get(platform_id=platform_id, is_active=True)
+        except Platform.DoesNotExist:
+            return JsonResponse({'error': 'Invalid platform'}, status=400)
+
+        # Verify balance
+        wallet = seller.wallet
+        if wallet.balance < amount:
+            return JsonResponse({
+                'error': f'Insufficient balance. Available: {wallet.balance:,.0f} UGX',
+                'available': str(wallet.balance)
+            }, status=400)
+
+        # Validate payment method specific fields
+        if payment_method in ('mtn_mobile_money', 'airtel_mobile_money'):
+            if not phone_number:
+                return JsonResponse({
+                    'error': 'Phone number is required for mobile money'
+                }, status=400)
+            if not recipient_name:
+                return JsonResponse({
+                    'error': 'Recipient name is required'
+                }, status=400)
+        elif payment_method == 'bank_transfer':
+            if not all([bank_name, account_number, account_name]):
+                return JsonResponse({
+                    'error': 'Bank name, account number, and account name are required'
+                }, status=400)
+        else:
+            return JsonResponse({'error': 'Invalid payment method'}, status=400)
+
+        # Check for duplicate pending requests
+        existing = CashoutRequest.objects.filter(
+            seller=seller,
+            status='pending',
+            amount=amount,
+            payment_method=payment_method
+        ).exists()
+
+        if existing:
+            return JsonResponse({
+                'error': 'You already have a pending cashout request for this amount and method'
+            }, status=400)
+
+        try:
+            cashout = CashoutRequest.objects.create(
+                seller=seller,
+                platform=platform,
+                amount=amount,
+                payment_method=payment_method,
+                phone_number=phone_number if payment_method != 'bank_transfer' else None,
+                recipient_name=recipient_name if payment_method != 'bank_transfer' else None,
+                bank_name=bank_name if payment_method == 'bank_transfer' else None,
+                account_number=account_number if payment_method == 'bank_transfer' else None,
+                account_name=account_name if payment_method == 'bank_transfer' else None,
+                seller_note=seller_note,
+                status='pending'
+            )
+
+            logger.info(
+                f"✅ Cashout request created: {cashout.cashout_id} "
+                f"by {email} for {amount} UGX via {payment_method}"
+            )
+
+            return JsonResponse({
+                'success': True,
+                'message': 'Cashout request submitted successfully',
+                'cashout_id': cashout.cashout_id,
+                'amount': str(amount),
+                'payment_method': cashout.get_payment_method_display(),
+                'status': 'pending'
+            })
+
+        except Exception as e:
+            logger.error(f"❌ Cashout request error: {str(e)}", exc_info=True)
+            return JsonResponse({
+                'error': 'Failed to submit cashout request'
+            }, status=500)
+
+    # GET: Show cashout request form
+    # Get seller's pending cashout requests
+    pending_requests = []
+    try:
+        seller = Users.objects.get(email=email, role='seller')
+        wallet_balance = seller.wallet.balance
+        pending_requests = CashoutRequest.objects.filter(
+            seller=seller,
+            status__in=['pending', 'approved']
+        ).order_by('-created_at')[:5]
+    except Users.DoesNotExist:
+        wallet_balance = Decimal('0')
+
+    context = {
+        'email': email,
+        'platform_id': platform_id,
+        'wallet_balance': wallet_balance,
+        'pending_requests': pending_requests,
+    }
+    return render(request, 'seller_request_cashout.html', context)

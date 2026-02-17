@@ -22,7 +22,14 @@
             <!-- Amount -->
             <div class="border-b-2 border-white/10 pb-4">
                 <p class="text-xs font-black uppercase text-white/50">Amount</p>
-                <p class="text-2xl font-black text-primary">{{ dispute.payment_request_item.amount|floatformat:0 }} UGX</p>
+                <p class="text-2xl font-black text-primary">
+                    {% if dispute.disputed_amount %}
+                        {{ dispute.disputed_amount|floatformat:0 }}
+                    {% else %}
+                        {{ dispute.payment_request_item.amount|floatformat:0 }}
+                    {% endif %}
+                    UGX
+                </p>
             </div>
 
             <!-- Parties -->
@@ -68,16 +75,25 @@
             </label>
             <div class="space-y-3">
                 <label class="flex items-center border-2 border-white p-4 cursor-pointer hover:bg-white hover:text-black transition-colors">
-                    <input type="radio" name="resolution" value="approve_refund" class="mr-3" required/>
+                    <input type="radio" name="resolution" value="await_review" class="mr-3" required/>
                     <div>
-                        <p class="text-sm font-black uppercase">Approve Refund</p>
-                        <p class="text-xs font-bold text-white/70">Refund {{ dispute.payment_request_item.amount|floatformat:0 }} UGX to buyer</p>
+                        <p class="text-sm font-black uppercase">Await Review</p>
+                        <p class="text-xs font-bold text-white/70">Leave dispute open for further review</p>
                     </div>
                 </label>
                 <label class="flex items-center border-2 border-white p-4 cursor-pointer hover:bg-white hover:text-black transition-colors">
-                    <input type="radio" name="resolution" value="reject" class="mr-3"/>
+                    <input type="radio" name="resolution" value="resolve_with_refund" class="mr-3" required/>
                     <div>
-                        <p class="text-sm font-black uppercase">Reject Dispute</p>
+                        <p class="text-sm font-black uppercase">Resolve With Refund</p>
+                        <p class="text-xs font-bold text-white/70">
+                            Refund {% if dispute.disputed_amount %}{{ dispute.disputed_amount|floatformat:0 }}{% else %}{{ dispute.payment_request_item.amount|floatformat:0 }}{% endif %} UGX to buyer
+                        </p>
+                    </div>
+                </label>
+                <label class="flex items-center border-2 border-white p-4 cursor-pointer hover:bg-white hover:text-black transition-colors">
+                    <input type="radio" name="resolution" value="resolve_without_refund" class="mr-3"/>
+                    <div>
+                        <p class="text-sm font-black uppercase">Resolve Without Refund</p>
                         <p class="text-xs font-bold text-white/70">Keep funds with seller</p>
                     </div>
                 </label>

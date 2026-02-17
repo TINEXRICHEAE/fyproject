@@ -5,7 +5,9 @@ from . import views
 from . import api_views
 from . import buyer_seller_views
 from . import admin_views
+from . import dispute_api_views
 from cashingapp.seller_proxy_urls import seller_proxy_urlpatterns
+
 urlpatterns = [
     # ============= HOME =============
     path('', views.home, name='home'),
@@ -25,11 +27,12 @@ urlpatterns = [
     path('wallet-pin/', buyer_seller_views.wallet_view_pin, name='wallet_pin'),
     path('deposit-pin/', buyer_seller_views.deposit_pin, name='deposit_pin'),
     path('cashout-pin/', buyer_seller_views.cashout_pin, name='cashout_pin'),
+    path('seller-request-cashout/', buyer_seller_views.seller_request_cashout, name='seller_request_cashout'),
     
     # Payment Processing (PIN-based)
     path('payment/<uuid:request_id>/', views.payment_page, name='payment_page'),
     path('payment/<uuid:request_id>/process-pin/', buyer_seller_views.process_payment_with_pin, name='process_payment_pin'),
-    
+    path('payment/<uuid:request_id>/deposit-and-pay/', buyer_seller_views.deposit_and_pay, name='deposit_and_pay'),
     
     # ============= API ENDPOINTS =============
     
@@ -67,6 +70,22 @@ urlpatterns = [
     # Dispute Management
     path('disputes/', admin_views.disputes_list, name='admin_disputes'),
     path('dispute/<int:dispute_id>/resolve/', admin_views.resolve_dispute, name='admin_resolve_dispute'),
+
+    # Dispute Integration (from shopping app)
+    path('api/dispute/create-from-shopping/',
+         dispute_api_views.create_dispute_from_shopping,
+         name='api_create_dispute_from_shopping'),
+
+    path('dispute/<int:dispute_id>/resolve-with-sync/',
+         dispute_api_views.resolve_dispute_with_sync,
+         name='resolve_dispute_with_sync'),
+
+    # Cashout Request Management (Admin)
+    path('admin-cashout-requests/', admin_views.admin_cashout_requests, name='admin_cashout_requests'),
+    path('admin-cashout-review/<int:cashout_id>/', admin_views.admin_review_cashout, name='admin_review_cashout'),
+    path('admin-cashout-bulk-approve/', admin_views.admin_bulk_approve_cashouts, name='admin_bulk_approve'),
+    path('admin-cashout-export/', admin_views.admin_export_cashouts_csv, name='admin_export_cashouts'),
+    path('admin-cashout-disburse/', admin_views.admin_disburse_cashouts, name='admin_disburse_cashouts'),
     
     # User Management (Superadmin)
     path('users/', admin_views.users_list, name='admin_users'),

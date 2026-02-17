@@ -1,0 +1,2 @@
+Cashout ID,Payment Method,Amount,Currency,Phone Number / Account Number,Recipient / Account Name,Bank Name,Seller Email,Platform,Reference,Status,Requested At,Note
+1,MTN Mobile Money,45000.00,UGX,256707826354,Ocen Richard,,seller1@example.com,shopper,CASHOUT-1,approved,2026-02-16 00:06,My sales

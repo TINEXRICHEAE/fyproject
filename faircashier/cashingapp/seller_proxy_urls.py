@@ -12,14 +12,4 @@ seller_proxy_urlpatterns = [
     path('payment/seller-dashboard/', 
          seller_proxy_views.seller_dashboard_iframe, 
          name='seller_dashboard_iframe'),
-    
-    # Seller dashboard data (POST with PIN)
-    path('api/seller/dashboard-data/', 
-         seller_proxy_views.seller_dashboard_data, 
-         name='seller_dashboard_data_api'),
-    
-    # Cashout request to platform admin
-    path('api/seller/request-cashout/', 
-         seller_proxy_views.request_cashout_to_admin, 
-         name='seller_request_cashout'),
 ]

@@ -1,4 +1,4 @@
-<!-- templates/payment_page_pin.html -->
+<!-- templates/payment_page_pin.html (MODIFIED - Seamless Deposit+Pay) -->
 {% extends 'buyer_seller_base.html' %}
 
 {% block title %}Complete Payment{% endblock %}
@@ -42,7 +42,7 @@
     </div>
 
     {% if wallet.balance >= payment_request.total_amount %}
-    <!-- PIN Entry -->
+    <!-- ============= SUFFICIENT BALANCE: Direct Payment ============= -->
     <form id="paymentForm" class="space-y-6">
         <input type="hidden" name="email" value="{{ payment_request.buyer_email }}"/>
         
@@ -51,10 +51,10 @@
                 Enter PIN to Confirm
             </label>
             <div class="flex gap-2 justify-center mb-4">
-                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
             </div>
             <input type="hidden" id="pin" name="pin"/>
         </div>
@@ -71,30 +71,116 @@
             Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
         </button>
     </form>
+
     {% else %}
-    <!-- Insufficient Balance -->
-    <div class="border-2 border-white bg-white p-6 text-center">
-        <p class="text-xs font-black uppercase text-black mb-4">Insufficient Balance</p>
-        <p class="text-xs font-bold text-black/70">
-            Need {{ payment_request.total_amount|floatformat:0 }} but have {{ wallet.balance|floatformat:0 }}
+    <!-- ============= INSUFFICIENT BALANCE: Deposit + Pay Flow ============= -->
+    <div class="border-2 border-primary bg-black p-4 mb-6">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-3">⚡ Top-Up & Pay</p>
+        <div class="space-y-2 text-xs">
+            <div class="flex justify-between">
+                <span class="font-bold text-white/70">Required</span>
+                <span class="font-black text-white">{{ payment_request.total_amount|floatformat:0 }} UGX</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="font-bold text-white/70">Your Balance</span>
+                <span class="font-black text-white">{{ wallet.balance|floatformat:0 }} UGX</span>
+            </div>
+            <div class="flex justify-between pt-2 border-t-2 border-primary">
+                <span class="font-black text-primary">Deposit Needed</span>
+                <span class="font-black text-primary" id="shortfallDisplay">— UGX</span>
+            </div>
+        </div>
+        <p class="text-xs font-bold text-white/50 mt-3">
+            Enter your mobile money number below. The shortfall will be deposited automatically and payment completed in one step.
         </p>
     </div>
+
+    <form id="depositPayForm" class="space-y-6">
+        <input type="hidden" name="email" value="{{ payment_request.buyer_email }}"/>
+        
+        <!-- Phone Number for Deposit -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Mobile Money Number
+            </label>
+            <input 
+                type="tel" 
+                id="phone_number" 
+                name="phone_number"
+                placeholder="256700000000"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-1">You'll receive a prompt to approve the deposit</p>
+        </div>
+
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN to Confirm
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Status Message -->
+        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
+
+        <!-- Progress Steps (hidden initially) -->
+        <div id="progressSteps" class="hidden space-y-2">
+            <div class="flex items-center gap-3" id="step1">
+                <div class="w-6 h-6 border-2 border-white flex items-center justify-center text-xs font-black" id="step1Icon">1</div>
+                <span class="text-xs font-bold text-white/70">Initiating deposit...</span>
+            </div>
+            <div class="flex items-center gap-3" id="step2">
+                <div class="w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="step2Icon">2</div>
+                <span class="text-xs font-bold text-white/30" id="step2Text">Completing deposit...</span>
+            </div>
+            <div class="flex items-center gap-3" id="step3">
+                <div class="w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="step3Icon">3</div>
+                <span class="text-xs font-bold text-white/30" id="step3Text">Processing payment...</span>
+            </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="payBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Deposit & Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
+        </button>
+    </form>
     {% endif %}
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-// Auto-focus PIN inputs
+const TOTAL_AMOUNT = parseFloat('{{ payment_request.total_amount }}');
+const WALLET_BALANCE = parseFloat('{{ wallet.balance }}');
+const SHORTFALL = Math.max(0, Math.ceil(TOTAL_AMOUNT - WALLET_BALANCE));
+const HAS_SUFFICIENT = WALLET_BALANCE >= TOTAL_AMOUNT;
+const REQUEST_ID = '{{ payment_request.request_id }}';
+const BUYER_EMAIL = '{{ payment_request.buyer_email }}';
+
+// Display shortfall amount
+const shortfallEl = document.getElementById('shortfallDisplay');
+if (shortfallEl) {
+    shortfallEl.textContent = SHORTFALL.toLocaleString() + ' UGX';
+}
+
+// PIN Input Auto-Focus with numeric validation
 document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
     input.addEventListener('input', function(e) {
+        this.value = this.value.replace(/[^0-9]/g, '');
         if (this.value && index < inputs.length - 1) {
             inputs[index + 1].focus();
-        }
-        
-        // Auto-submit when complete
-        if (index === 3 && this.value) {
-            document.getElementById('paymentForm').dispatchEvent(new Event('submit'));
         }
     });
     
@@ -103,70 +189,200 @@ document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
             inputs[index - 1].focus();
         }
     });
+    
+    input.addEventListener('keypress', function(e) {
+        if (!/[0-9]/.test(e.key)) {
+            e.preventDefault();
+        }
+    });
 });
 
 document.getElementById('pin1')?.focus();
 
-// Payment Form
-document.getElementById('paymentForm')?.addEventListener('submit', async function(e) {
-    e.preventDefault();
-    
-    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
-        .map(id => document.getElementById(id).value)
-        .join('');
-    
-    if (pin.length !== 4) {
-        showStatus('Enter complete PIN', 'error');
-        return;
-    }
-    
-    document.getElementById('pin').value = pin;
-    
-    const payBtn = document.getElementById('payBtn');
-    payBtn.disabled = true;
-    payBtn.textContent = 'Processing...';
-    
-    const formData = new FormData(this);
-    
-    try {
-        const response = await fetch('/payment/{{ payment_request.request_id }}/process-pin/', {
-            method: 'POST',
-            body: formData
-        });
+// ============= SUFFICIENT BALANCE: Direct Payment =============
+if (HAS_SUFFICIENT) {
+    document.getElementById('paymentForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
         
-        const data = await response.json();
+        const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+            .map(id => document.getElementById(id).value)
+            .join('');
         
-        if (response.ok && data.success) {
-            payBtn.textContent = 'Success!';
-            payBtn.classList.remove('bg-primary');
-            payBtn.classList.add('bg-white');
-            
-            // Notify parent iframe
-            window.parent.postMessage({
-                type: 'payment_success',
-                request_id: '{{ payment_request.request_id }}',
-                amount: '{{ payment_request.total_amount }}'
-            }, '*');
-            
-            showStatus('Payment Successful!', 'success');
-        } else {
-            showStatus(data.error || 'Payment failed', 'error');
-            
-            // Clear PIN
-            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
-                document.getElementById(id).value = '';
-            });
-            document.getElementById('pin1').focus();
-            
-            payBtn.disabled = false;
-            payBtn.textContent = 'Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}';
+        if (pin.length !== 4) {
+            showStatus('Enter complete PIN', 'error');
+            return;
         }
-    } catch (error) {
-        showStatus('Network error', 'error');
-        payBtn.disabled = false;
-        payBtn.textContent = 'Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}';
+        
+        document.getElementById('pin').value = pin;
+        
+        const payBtn = document.getElementById('payBtn');
+        payBtn.disabled = true;
+        payBtn.textContent = 'Processing...';
+        
+        const formData = new FormData(this);
+        
+        try {
+            const response = await fetch(`/payment/${REQUEST_ID}/process-pin/`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                payBtn.textContent = 'Success!';
+                payBtn.classList.remove('bg-primary');
+                payBtn.classList.add('bg-white');
+                
+                window.parent.postMessage({
+                    type: 'payment_success',
+                    request_id: REQUEST_ID,
+                    amount: String(TOTAL_AMOUNT)
+                }, '*');
+                
+                showStatus('Payment Successful!', 'success');
+            } else {
+                showStatus(data.error || 'Payment failed', 'error');
+                clearPinInputs();
+                payBtn.disabled = false;
+                payBtn.textContent = `Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
+            }
+        } catch (error) {
+            showStatus('Network error', 'error');
+            payBtn.disabled = false;
+            payBtn.textContent = `Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
+        }
+    });
+}
+
+// ============= INSUFFICIENT BALANCE: Deposit + Pay =============
+if (!HAS_SUFFICIENT) {
+    document.getElementById('depositPayForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+            .map(id => document.getElementById(id).value)
+            .join('');
+        
+        if (pin.length !== 4) {
+            showStatus('Enter complete PIN', 'error');
+            return;
+        }
+        
+        const phoneNumber = document.getElementById('phone_number').value.trim();
+        if (!phoneNumber) {
+            showStatus('Enter your mobile money number', 'error');
+            return;
+        }
+        
+        document.getElementById('pin').value = pin;
+        
+        const payBtn = document.getElementById('payBtn');
+        payBtn.disabled = true;
+        payBtn.textContent = 'Processing...';
+        
+        // Show progress steps
+        const progressSteps = document.getElementById('progressSteps');
+        progressSteps.classList.remove('hidden');
+        
+        // Step 1: Initiating
+        updateStep(1, 'active');
+        
+        const formData = new FormData(this);
+        
+        try {
+            // Simulate step progression for UX
+            setTimeout(() => updateStep(2, 'active'), 800);
+            setTimeout(() => updateStep(3, 'active'), 1600);
+            
+            const response = await fetch(`/payment/${REQUEST_ID}/deposit-and-pay/`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok && data.success) {
+                // Mark all steps complete
+                updateStep(1, 'complete');
+                updateStep(2, 'complete');
+                updateStep(3, 'complete');
+                
+                payBtn.textContent = 'Success!';
+                payBtn.classList.remove('bg-primary');
+                payBtn.classList.add('bg-white');
+                
+                // Notify parent iframe
+                window.parent.postMessage({
+                    type: 'payment_success',
+                    request_id: REQUEST_ID,
+                    amount: String(TOTAL_AMOUNT)
+                }, '*');
+                
+                showStatus('Payment Successful!', 'success');
+                
+                if (data.deposited && parseFloat(data.deposited) > 0) {
+                    setTimeout(() => {
+                        showStatus(
+                            `Deposited ${parseFloat(data.deposited).toLocaleString()} UGX & Paid ${TOTAL_AMOUNT.toLocaleString()} UGX`, 
+                            'success'
+                        );
+                    }, 1500);
+                }
+            } else {
+                progressSteps.classList.add('hidden');
+                
+                let errorMsg = data.error || 'Payment failed';
+                if (data.deposit_failed) {
+                    errorMsg = 'Deposit failed: ' + errorMsg;
+                }
+                
+                showStatus(errorMsg, 'error');
+                clearPinInputs();
+                payBtn.disabled = false;
+                payBtn.textContent = `Deposit & Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
+            }
+        } catch (error) {
+            progressSteps.classList.add('hidden');
+            showStatus('Network error. Please try again.', 'error');
+            payBtn.disabled = false;
+            payBtn.textContent = `Deposit & Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
+        }
+    });
+}
+
+// ============= Helper Functions =============
+
+function updateStep(stepNum, state) {
+    const icon = document.getElementById(`step${stepNum}Icon`);
+    const text = icon?.parentElement?.querySelector('span');
+    
+    if (!icon) return;
+    
+    if (state === 'active') {
+        icon.classList.remove('border-white/30', 'text-white/30');
+        icon.classList.add('border-primary', 'text-primary');
+        if (text) {
+            text.classList.remove('text-white/30');
+            text.classList.add('text-white');
+        }
+    } else if (state === 'complete') {
+        icon.classList.remove('border-white/30', 'text-white/30', 'border-primary', 'text-primary');
+        icon.classList.add('border-primary', 'bg-primary', 'text-black');
+        icon.textContent = '✓';
+        if (text) {
+            text.classList.remove('text-white/30');
+            text.classList.add('text-primary');
+        }
     }
-});
+}
+
+function clearPinInputs() {
+    ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('pin1').focus();
+}
 
 function showStatus(message, type) {
     const statusMsg = document.getElementById('statusMsg');

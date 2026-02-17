@@ -65,11 +65,17 @@
         </div>
 
         <!-- Quick Actions -->
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-3 gap-4">
+            <a href="/seller-request-cashout/?email={{ email }}&platform_id={{ platform_id }}" class="block">
+                <div class="border-2 border-primary p-4 text-center hover:bg-primary hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">request_quote</span>
+                    <p class="text-xs font-black uppercase">Request Cashout</p>
+                </div>
+            </a>
             <a href="/cashout-pin/?email={{ email }}" class="block">
                 <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
                     <span class="material-symbols-outlined text-xl mb-2">arrow_upward</span>
-                    <p class="text-xs font-black uppercase">Cashout</p>
+                    <p class="text-xs font-black uppercase">Direct Cashout</p>
                 </div>
             </a>
             <a href="/wallet-pin/?email={{ email }}" class="block">

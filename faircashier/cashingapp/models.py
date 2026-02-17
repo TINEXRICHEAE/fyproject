@@ -346,15 +346,18 @@ class Dispute(models.Model):
     reason = models.CharField(max_length=50, choices=REASON_CHOICES)
     description = models.TextField()
     STATUS_CHOICES = (
-        ('open', 'Open'),
+        ('submitted', 'Submitted'),
         ('under_review', 'Under Review'),
-        ('auto_refunded', 'Auto Refunded'),
         ('escalated', 'Escalated to Admin'),
-        ('resolved', 'Resolved'),
-        ('rejected', 'Rejected'),
+        ('resolved_with_refund', 'Resolved With Refund'),
+        ('resolved_without_refund', 'Resolved Without Refund'),
     )
     status = models.CharField(
-        max_length=30, choices=STATUS_CHOICES, default='open')
+        max_length=30, choices=STATUS_CHOICES, default='submitted')
+    disputed_amount = models.DecimalField(
+    max_digits=12, decimal_places=2, null=True, blank=True,
+    help_text="Amount of the specific disputed item (not the full payment request item)"
+    )
     refund_transaction = models.ForeignKey(
         Transaction,
         on_delete=models.SET_NULL,
@@ -463,3 +466,105 @@ class ActivityLog(models.Model):
 
     def __str__(self):
         return f"ActivityLog({self.action} by {self.user.email if self.user else 'System'})"
+
+
+
+
+
+class CashoutRequest(models.Model):
+    """
+    Seller cashout requests for platform admin review and disbursement.
+    
+    Flow:
+    1. Seller submits request with amount + payment method details
+    2. Platform admin reviews and approves/rejects
+    3. Admin exports approved requests as CSV (grouped by payment method)
+    4. Admin uploads CSV to actual MTN/Airtel/Bank bulk payment portal
+    5. Admin marks requests as disbursed → wallet deducted + transaction created
+    """
+    cashout_id = models.AutoField(primary_key=True)
+    seller = models.ForeignKey(
+        Users,
+        on_delete=models.CASCADE,
+        related_name='cashout_requests',
+        limit_choices_to={'role': 'seller'}
+    )
+    platform = models.ForeignKey(
+        Platform,
+        on_delete=models.CASCADE,
+        related_name='cashout_requests'
+    )
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default='UGX')
+
+    PAYMENT_METHOD_CHOICES = (
+        ('mtn_mobile_money', 'MTN Mobile Money'),
+        ('airtel_mobile_money', 'Airtel Money'),
+        ('bank_transfer', 'Bank Transfer'),
+    )
+    payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES)
+
+    # Mobile money fields
+    phone_number = models.CharField(max_length=15, blank=True, null=True)
+    recipient_name = models.CharField(
+        max_length=150, blank=True, null=True,
+        help_text="Full name of the mobile money or bank account holder"
+    )
+
+    # Bank transfer fields
+    bank_name = models.CharField(max_length=100, blank=True, null=True)
+    account_number = models.CharField(max_length=50, blank=True, null=True)
+    account_name = models.CharField(max_length=150, blank=True, null=True)
+
+    STATUS_CHOICES = (
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('disbursed', 'Disbursed'),
+        ('failed', 'Failed'),
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    # Seller note
+    seller_note = models.TextField(blank=True, null=True)
+
+    # Admin review fields
+    admin_notes = models.TextField(blank=True, null=True)
+    reviewed_by = models.ForeignKey(
+        Users,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='reviewed_cashouts',
+        limit_choices_to={'role__in': ['admin', 'superadmin']}
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    # Disbursement tracking
+    disbursed_at = models.DateTimeField(null=True, blank=True)
+    transaction = models.ForeignKey(
+        Transaction,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='cashout_request'
+    )
+    external_reference = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text="Reference from external payment gateway (MTN/Airtel/Bank)"
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'cashout_requests'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"CashoutRequest({self.seller.email}: {self.amount} {self.currency} via {self.get_payment_method_display()})"
+
+    @property
+    def payment_destination(self):
+        """Human-readable payment destination"""
+        if self.payment_method == 'bank_transfer':
+            return f"{self.bank_name} - {self.account_number}"
+        return self.phone_number or "N/A"
