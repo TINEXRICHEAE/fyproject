@@ -161,10 +161,16 @@ def admin_dashboard(request):
         platform__in=platforms
     ).order_by('-created_at')[:10]
     
-    pending_disputes = Dispute.objects.filter(
-        payment_request_item__payment_request__platform__in=platforms,
-        status__in=['submitted', 'under_review', 'escalated']
+    # Disputes — both count and actual objects
+    all_disputes = Dispute.objects.filter(
+        payment_request_item__payment_request__platform__in=platforms
+    ).select_related('buyer', 'seller', 'payment_request_item').order_by('-created_at')
+
+    pending_disputes = all_disputes.exclude(
+        status__in=['resolved_with_refund', 'resolved_without_refund']
     ).count()
+
+    recent_disputes = all_disputes[:5]
     
     context = {
         'user': request.user,
@@ -173,11 +179,10 @@ def admin_dashboard(request):
         'total_volume': total_volume,
         'recent_payments': recent_payments,
         'pending_disputes': pending_disputes,
+        'recent_disputes': recent_disputes,
     }
     
     return render(request, 'admin_dashboard.html', context)
-
-
 # ============= SUPERADMIN DASHBOARD =============
 
 @login_required(login_url='admin_login')

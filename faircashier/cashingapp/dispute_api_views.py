@@ -268,7 +268,7 @@ def resolve_dispute_with_sync(request, dispute_id):
                 seller_wallet = dispute.seller.wallet
                 buyer_wallet = dispute.buyer.wallet
 
-                refund_amount = dispute.payment_request_item.amount
+                refund_amount = dispute.disputed_amount or dispute.payment_request_item.amount
 
                 if seller_wallet.balance < refund_amount:
                     return JsonResponse({
