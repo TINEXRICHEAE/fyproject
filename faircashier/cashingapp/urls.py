@@ -50,7 +50,26 @@ urlpatterns = [
     
     # Webhook simulation
     path('api/webhook/complete/<uuid:transaction_id>/', views.simulate_webhook_completion, name='simulate_webhook'),
-    
+
+    path('payment/<uuid:request_id>/process-items/',
+         buyer_seller_views.process_payment_items,
+         name='process_payment_items'),
+    # NEW: buyer completes a pending deposit (transfers reserved funds to seller)
+    path('payment/<uuid:request_id>/complete-deposit/<int:item_id>/',
+         buyer_seller_views.complete_deposit_item,
+         name='complete_deposit_item'),
+
+    # NEW: buyer cancels a pending deposit (releases the reservation)
+    path('payment/<uuid:request_id>/cancel-deposit/<int:item_id>/',
+         buyer_seller_views.cancel_deposit_item,
+         name='cancel_deposit_item'),
+    path('payment/<uuid:request_id>/complete-deposit/shopping-item/<int:shopping_order_item_id>/',
+         buyer_seller_views.complete_deposit_by_order_item,
+         name='complete_deposit_by_order_item'),
+
+    path('payment/<uuid:request_id>/cancel-deposit/shopping-item/<int:shopping_order_item_id>/',
+         buyer_seller_views.cancel_deposit_by_order_item,
+         name='cancel_deposit_by_order_item'),
     
     # ============= ADMIN/SUPERADMIN ROUTES (PASSWORD-BASED) =============
     

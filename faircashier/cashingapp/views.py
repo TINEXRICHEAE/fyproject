@@ -133,56 +133,62 @@ def home(request):
 
 @csrf_exempt
 def create_payment_request(request):
-    """API endpoint for e-commerce platforms to create payment requests"""
+    """API endpoint for e-commerce platforms to create payment requests."""
     import json
     from decimal import Decimal
     from django.db import transaction as db_transaction
     from .models import Platform, PaymentRequestItem
-    
+
     try:
         data = json.loads(request.body)
-        api_key = data.get('api_key')
-        buyer_email = data.get('buyer_email')
-        items = data.get('items', [])
-        metadata = data.get('metadata', {})
-        
+        api_key      = data.get('api_key')
+        buyer_email  = data.get('buyer_email')
+        items        = data.get('items', [])
+        metadata     = data.get('metadata', {})
+
         # Validate API key
         try:
             platform = Platform.objects.get(api_key=api_key, is_active=True)
         except Platform.DoesNotExist:
             return JsonResponse({'error': 'Invalid API key'}, status=401)
-        
-        # Calculate total
+
         total_amount = sum(Decimal(item['amount']) for item in items)
-        
+
         with db_transaction.atomic():
-            # Create payment request
             payment_request = PaymentRequest.objects.create(
                 platform=platform,
                 buyer_email=buyer_email,
                 total_amount=total_amount,
                 status='initiated',
-                metadata=metadata
+                metadata=metadata,
             )
-            
-            # Create payment request items
+
             for item in items:
+                # Support both the NEW singular key and the OLD list key
+                shopping_id = item.get('shopping_order_item_id')
+                if shopping_id is None:
+                    # Fallback: old format sent a list; take the first element
+                    id_list = item.get('shopping_order_item_ids', [])
+                    shopping_id = id_list[0] if id_list else None
+
                 PaymentRequestItem.objects.create(
                     payment_request=payment_request,
                     seller_email=item['seller_email'],
-                    amount=Decimal(item['amount']),
-                    product_description=item.get('description', '')
+                    amount=item['amount'],
+                    currency=item.get('currency', 'UGX'),
+                    product_description=item.get('description', ''),
+                    shopping_order_item_id=shopping_id,   # 1:1 with OrderItem
                 )
-        
+
         logger.info(f"✅ Payment request created: {payment_request.request_id}")
-        
+
         return JsonResponse({
-            'message': 'Payment request created',
-            'request_id': str(payment_request.request_id),
+            'message':     'Payment request created',
+            'request_id':  str(payment_request.request_id),
             'payment_url': f'/payment/{payment_request.request_id}/',
-            'total_amount': str(total_amount)
+            'total_amount': str(total_amount),
         }, status=201)
-        
+
     except Exception as e:
         logger.error(f"❌ Payment request error: {str(e)}")
         return JsonResponse({'error': 'Failed to create payment request'}, status=500)

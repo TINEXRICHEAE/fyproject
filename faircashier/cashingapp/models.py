@@ -183,6 +183,18 @@ class Wallet(models.Model):
         Users, on_delete=models.CASCADE, related_name='wallet')
     balance = models.DecimalField(
         max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    # ← NEW ─────────────────────────────────────────────────────────────────
+    reserved_balance = models.DecimalField(
+        max_digits=12, decimal_places=2, default=Decimal('0.00'),
+        help_text=(
+            "Funds earmarked for pending item deposits. "
+            "These remain in the wallet (balance is unchanged) but cannot be "
+            "freely spent until the reservation is completed or released."
+        )
+    )
+    # ────────────────────────────────────────────────────────────────────────
+
     currency = models.CharField(max_length=3, default='UGX')
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -193,6 +205,16 @@ class Wallet(models.Model):
 
     def __str__(self):
         return f"Wallet({self.user.email}: {self.balance} {self.currency})"
+
+    # ← NEW ─────────────────────────────────────────────────────────────────
+    @property
+    def free_balance(self):
+        """
+        The portion of balance that can be freely spent or reserved.
+        free_balance = balance - reserved_balance
+        """
+        return self.balance - self.reserved_balance
+    # ────────────────────────────────────────────────────────────────────────
 
 
 class Transaction(models.Model):
@@ -304,6 +326,23 @@ class PaymentRequestItem(models.Model):
     )
     is_cleared = models.BooleanField(
         default=False, help_text="Buyer confirmed delivery")
+    is_deposited = models.BooleanField(
+            default=False,
+            help_text="True when buyer has deposited funds to their wallet for this item"
+        )
+    deposited_amount = models.DecimalField(
+        max_digits=12, decimal_places=2,
+        null=True, blank=True,
+        help_text="Amount deposited to buyer wallet for this item"
+    )
+    deposited_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the deposit was made"
+    )
+    shopping_order_item_id = models.IntegerField(
+        null=True, blank=True,
+        help_text="Linked OrderItem.id on the shopping app — used for webhook status sync"
+    )
     cleared_at = models.DateTimeField(null=True, blank=True)
     product_description = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)

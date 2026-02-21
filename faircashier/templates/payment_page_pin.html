@@ -1,16 +1,19 @@
-<!-- templates/payment_page_pin.html (MODIFIED - Seamless Deposit+Pay) -->
+<!-- templates/payment_page_pin.html — Pay or Deposit (Reserve in Wallet) -->
 {% extends 'buyer_seller_base.html' %}
 
 {% block title %}Complete Payment{% endblock %}
 
 {% block content %}
-<div class="w-full max-w-md">
-    <!-- Header -->
+<div class="w-full max-w-lg">
+
+    <!-- ════════════ HEADER ════════════════════════════════════════════════ -->
     <div class="border-b-2 border-white pb-4 mb-6">
         <div class="flex items-center justify-between">
             <div>
-                <p class="text-xs font-black uppercase tracking-widest text-white/70">Total Amount</p>
-                <h1 class="text-3xl font-black text-primary">{{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}</h1>
+                <p class="text-xs font-black uppercase tracking-widest text-white/70">Order Total</p>
+                <h1 class="text-3xl font-black text-primary" id="grandTotalDisplay">
+                    {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
+                </h1>
             </div>
             <div class="bg-primary w-12 h-12 flex items-center justify-center">
                 <span class="material-symbols-outlined text-black font-black text-2xl">lock</span>
@@ -18,384 +21,442 @@
         </div>
     </div>
 
-    <!-- Items Summary -->
-    <div class="border-2 border-white mb-6">
-        <div class="bg-white p-3 border-b-2 border-black">
-            <p class="text-xs font-black uppercase text-black">Items</p>
-        </div>
-        <div class="p-3 space-y-2">
-            {% for item in items %}
-            <div class="flex justify-between text-xs">
-                <span class="font-bold text-white">{{ item.seller_email }}</span>
-                <span class="font-black text-primary">{{ item.amount|floatformat:0 }}</span>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <!-- Wallet Balance -->
-    <div class="border-2 border-white mb-6 p-3">
+    <!-- ════════════ WALLET BALANCE ════════════════════════════════════════ -->
+    <div class="border-2 border-white mb-5 p-3">
         <div class="flex justify-between items-center">
-            <span class="text-xs font-black uppercase text-white/70">Your Balance</span>
-            <span class="text-lg font-black text-white">{{ wallet.balance|floatformat:0 }} {{ wallet.currency }}</span>
+            <span class="text-xs font-black uppercase text-white/70">Wallet Balance</span>
+            <div class="text-right">
+                <div class="text-lg font-black text-white" id="walletBalanceDisplay">
+                    {{ wallet.balance|floatformat:0 }} {{ wallet.currency }}
+                </div>
+                <div class="text-xs text-white/50 mt-0.5">
+                    Free: <span id="walletFreeDisplay">{{ wallet.free_balance|floatformat:0 }}</span>
+                    {% if wallet.reserved_balance > 0 %}
+                    &nbsp;·&nbsp;Reserved:
+                    <span id="walletReservedDisplay">{{ wallet.reserved_balance|floatformat:0 }}</span>
+                    {% endif %}
+                    {{ wallet.currency }}
+                </div>
+            </div>
         </div>
     </div>
 
-    {% if wallet.balance >= payment_request.total_amount %}
-    <!-- ============= SUFFICIENT BALANCE: Direct Payment ============= -->
-    <form id="paymentForm" class="space-y-6">
-        <input type="hidden" name="email" value="{{ payment_request.buyer_email }}"/>
-        
-        <div>
-            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
-                Enter PIN to Confirm
-            </label>
-            <div class="flex gap-2 justify-center mb-4">
-                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+    <!-- ════════════ PER-ITEM ACTION CARDS ═════════════════════════════════ -->
+    <div class="mb-5 space-y-4" id="itemActionCards">
+        {% for item in items %}
+        <div class="border-2 border-white item-card"
+             data-item-id="{{ item.item_id }}"
+             data-amount="{{ item.amount }}">
+
+            <!-- Item header -->
+            <div class="flex justify-between items-center p-3 bg-white/5">
+                <div>
+                    <p class="text-xs font-black uppercase text-white/50 tracking-widest">Seller</p>
+                    <p class="text-sm font-black text-white">{{ item.seller_email }}</p>
+                </div>
+                <p class="text-lg font-black text-primary">
+                    {{ item.amount|floatformat:0 }} {{ item.currency }}
+                </p>
             </div>
-            <input type="hidden" id="pin" name="pin"/>
+
+            {% if item.product_description %}
+            <div class="px-3 py-2 border-t border-white/10">
+                <p class="text-xs text-white/50">{{ item.product_description }}</p>
+            </div>
+            {% endif %}
+
+            <!-- Action selector -->
+            <div class="p-3 border-t border-white/10">
+                <p class="text-xs font-black uppercase tracking-widest text-white/60 mb-2">How to pay</p>
+                <div class="flex gap-2">
+
+                    <!-- PAY NOW: wallet → seller immediately -->
+                    <button type="button"
+                        class="action-btn flex-1 py-3 text-xs font-black uppercase border-2
+                               transition-colors border-white/30 text-white/50"
+                        data-action="pay"
+                        data-item-id="{{ item.item_id }}">
+                        <span class="block text-base mb-0.5">💳</span>
+                        Pay Now
+                    </button>
+
+                    <!-- DEPOSIT: reserve in wallet, pay seller later -->
+                    <button type="button"
+                        class="action-btn flex-1 py-3 text-xs font-black uppercase border-2
+                               transition-colors border-white/30 text-white/50"
+                        data-action="deposit"
+                        data-item-id="{{ item.item_id }}">
+                        <span class="block text-base mb-0.5">🔒</span>
+                        Deposit
+                    </button>
+
+                </div>
+
+                <!-- Description (filled by JS) -->
+                <div class="action-desc mt-2 text-xs text-white/50 hidden"
+                     data-item-id="{{ item.item_id }}"></div>
+
+                <!-- Per-item result badge (filled after submit) -->
+                <div class="item-status mt-2 hidden"
+                     data-item-id="{{ item.item_id }}">
+                    <span class="inline-block px-2 py-1 text-xs font-black uppercase"></span>
+                </div>
+            </div>
         </div>
+        {% endfor %}
+    </div>
 
-        <!-- Status Message -->
-        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
-
-        <!-- Submit Button -->
-        <button 
-            type="submit" 
-            id="payBtn"
-            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
-        >
-            Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
-        </button>
-    </form>
-
-    {% else %}
-    <!-- ============= INSUFFICIENT BALANCE: Deposit + Pay Flow ============= -->
-    <div class="border-2 border-primary bg-black p-4 mb-6">
-        <p class="text-xs font-black uppercase tracking-widest text-primary mb-3">⚡ Top-Up & Pay</p>
-        <div class="space-y-2 text-xs">
+    <!-- ════════════ TOP-UP NOTICE ══════════════════════════════════════════
+         Shown when total of ALL items > wallet.free_balance.
+         One mobile-money top-up covers the whole shortfall.
+    ═══════════════════════════════════════════════════════════════════════ -->
+    <div id="topupNotice" class="border-2 border-primary bg-black p-4 mb-5 hidden">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-3">
+            ⚡ Wallet Top-Up Required
+        </p>
+        <div class="space-y-1 text-xs mb-4">
             <div class="flex justify-between">
-                <span class="font-bold text-white/70">Required</span>
-                <span class="font-black text-white">{{ payment_request.total_amount|floatformat:0 }} UGX</span>
+                <span class="text-white/60">Order Total</span>
+                <span class="font-black text-white" id="orderTotalInNotice">—</span>
             </div>
             <div class="flex justify-between">
-                <span class="font-bold text-white/70">Your Balance</span>
-                <span class="font-black text-white">{{ wallet.balance|floatformat:0 }} UGX</span>
+                <span class="text-white/60">Wallet Free Balance</span>
+                <span class="font-black text-white" id="freeBalanceInNotice">—</span>
             </div>
-            <div class="flex justify-between pt-2 border-t-2 border-primary">
-                <span class="font-black text-primary">Deposit Needed</span>
-                <span class="font-black text-primary" id="shortfallDisplay">— UGX</span>
+            <div class="flex justify-between border-t border-white/10 pt-1 mt-1">
+                <span class="text-white/60">Top-Up Needed</span>
+                <span class="font-black text-primary" id="topupAmount">—</span>
             </div>
         </div>
-        <p class="text-xs font-bold text-white/50 mt-3">
-            Enter your mobile money number below. The shortfall will be deposited automatically and payment completed in one step.
+        <label class="block text-xs font-black uppercase tracking-widest text-white mb-1">
+            Mobile Money Number
+        </label>
+        <input type="tel" id="phone_number" name="phone_number"
+            placeholder="256700000000"
+            class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold
+                   focus:border-primary focus:outline-none"
+            autocomplete="tel"/>
+        <p class="text-xs text-white/40 mt-1">
+            You will receive a phone prompt to approve the top-up. Funds are credited to your
+            wallet before any payment is processed.
         </p>
     </div>
 
-    <form id="depositPayForm" class="space-y-6">
-        <input type="hidden" name="email" value="{{ payment_request.buyer_email }}"/>
-        
-        <!-- Phone Number for Deposit -->
-        <div>
-            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
-                Mobile Money Number
-            </label>
-            <input 
-                type="tel" 
-                id="phone_number" 
-                name="phone_number"
-                placeholder="256700000000"
-                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
-                required
-            />
-            <p class="text-xs font-bold text-white/50 mt-1">You'll receive a prompt to approve the deposit</p>
+    <!-- ════════════ ORDER SUMMARY PREVIEW ════════════════════════════════ -->
+    <div id="orderSummary" class="hidden border border-white/10 p-3 mb-5">
+        <p class="text-xs font-black uppercase tracking-widest text-white/60 mb-2">Summary</p>
+        <div id="summaryRows" class="space-y-1 text-xs"></div>
+    </div>
+
+    <!-- ════════════ PIN ENTRY ══════════════════════════════════════════════ -->
+    <div class="mb-5">
+        <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+            Enter PIN to Confirm
+        </label>
+        <div class="flex gap-2 justify-center">
+            <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
         </div>
+    </div>
 
-        <!-- PIN Entry -->
-        <div>
-            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
-                Enter PIN to Confirm
-            </label>
-            <div class="flex gap-2 justify-center mb-4">
-                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
-            </div>
-            <input type="hidden" id="pin" name="pin"/>
+    <!-- ════════════ STATUS MESSAGE ════════════════════════════════════════ -->
+    <div id="statusMsg" class="hidden border-2 p-3 text-xs font-black uppercase text-center mb-4"></div>
+
+    <!-- ════════════ PROGRESS STEPS ═══════════════════════════════════════ -->
+    <div id="progressSteps" class="hidden space-y-2 mb-4">
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white flex items-center justify-center text-xs font-black" id="s1Icon">1</div>
+            <span class="text-xs font-bold text-white/70" id="s1Text">Verifying &amp; topping up wallet…</span>
         </div>
-
-        <!-- Status Message -->
-        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
-
-        <!-- Progress Steps (hidden initially) -->
-        <div id="progressSteps" class="hidden space-y-2">
-            <div class="flex items-center gap-3" id="step1">
-                <div class="w-6 h-6 border-2 border-white flex items-center justify-center text-xs font-black" id="step1Icon">1</div>
-                <span class="text-xs font-bold text-white/70">Initiating deposit...</span>
-            </div>
-            <div class="flex items-center gap-3" id="step2">
-                <div class="w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="step2Icon">2</div>
-                <span class="text-xs font-bold text-white/30" id="step2Text">Completing deposit...</span>
-            </div>
-            <div class="flex items-center gap-3" id="step3">
-                <div class="w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="step3Icon">3</div>
-                <span class="text-xs font-bold text-white/30" id="step3Text">Processing payment...</span>
-            </div>
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="s2Icon">2</div>
+            <span class="text-xs font-bold text-white/30" id="s2Text">Processing instant payments…</span>
         </div>
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="s3Icon">3</div>
+            <span class="text-xs font-bold text-white/30" id="s3Text">Reserving deposited funds…</span>
+        </div>
+    </div>
 
-        <!-- Submit Button -->
-        <button 
-            type="submit" 
-            id="payBtn"
-            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
-        >
-            Deposit & Pay {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
-        </button>
-    </form>
-    {% endif %}
+    <!-- ════════════ SUBMIT BUTTON ══════════════════════════════════════════ -->
+    <button type="button" id="submitBtn"
+        class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black
+               uppercase hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled>
+        Select an action for each item
+    </button>
+
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const TOTAL_AMOUNT = parseFloat('{{ payment_request.total_amount }}');
-const WALLET_BALANCE = parseFloat('{{ wallet.balance }}');
-const SHORTFALL = Math.max(0, Math.ceil(TOTAL_AMOUNT - WALLET_BALANCE));
-const HAS_SUFFICIENT = WALLET_BALANCE >= TOTAL_AMOUNT;
-const REQUEST_ID = '{{ payment_request.request_id }}';
-const BUYER_EMAIL = '{{ payment_request.buyer_email }}';
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const REQUEST_ID      = '{{ payment_request.request_id }}';
+const BUYER_EMAIL     = '{{ payment_request.buyer_email }}';
+const CURRENCY        = '{{ payment_request.currency }}';
+const WALLET_BALANCE  = parseFloat('{{ wallet.balance|floatformat:2 }}')          || 0;
+const WALLET_RESERVED = parseFloat('{{ wallet.reserved_balance|floatformat:2 }}') || 0;
+let   walletFree      = WALLET_BALANCE - WALLET_RESERVED;
 
-// Display shortfall amount
-const shortfallEl = document.getElementById('shortfallDisplay');
-if (shortfallEl) {
-    shortfallEl.textContent = SHORTFALL.toLocaleString() + ' UGX';
-}
+// Item map: itemId → { amount, action }
+const itemMap = {};
+document.querySelectorAll('.item-card').forEach(card => {
+    itemMap[card.dataset.itemId] = {
+        amount: parseFloat(card.dataset.amount) || 0,
+        action: null,
+    };
+});
 
-// PIN Input Auto-Focus with numeric validation
-document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
-    input.addEventListener('input', function(e) {
-        this.value = this.value.replace(/[^0-9]/g, '');
-        if (this.value && index < inputs.length - 1) {
-            inputs[index + 1].focus();
-        }
-    });
-    
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !this.value && index > 0) {
-            inputs[index - 1].focus();
-        }
-    });
-    
-    input.addEventListener('keypress', function(e) {
-        if (!/[0-9]/.test(e.key)) {
-            e.preventDefault();
-        }
+// ─── ACTION DESCRIPTIONS ─────────────────────────────────────────────────────
+const DESCRIPTIONS = {
+    pay:     'Funds transfer immediately from your wallet to the seller. The seller is paid right now.',
+    deposit: 'Funds are reserved inside your wallet — they stay with you but are earmarked for this item. '
+           + 'The seller can see the payment is secured. Complete the transfer to the seller whenever you\'re ready, '
+           + 'or release the reservation if you change your mind.',
+};
+
+// ─── ACTION BUTTON CLICKS ────────────────────────────────────────────────────
+document.querySelectorAll('.action-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+        const itemId = this.dataset.itemId;
+        const action = this.dataset.action;
+
+        // Reset siblings
+        document.querySelectorAll(`.action-btn[data-item-id="${itemId}"]`).forEach(b => {
+            b.classList.remove('bg-primary', 'text-black', 'border-primary');
+            b.classList.add('border-white/30', 'text-white/50');
+        });
+
+        // Activate this button
+        this.classList.remove('border-white/30', 'text-white/50');
+        this.classList.add('bg-primary', 'text-black', 'border-primary');
+
+        itemMap[itemId].action = action;
+
+        const desc = document.querySelector(`.action-desc[data-item-id="${itemId}"]`);
+        if (desc) { desc.textContent = DESCRIPTIONS[action] || ''; desc.classList.remove('hidden'); }
+
+        recalculate();
     });
 });
 
+// ─── RECALCULATE ─────────────────────────────────────────────────────────────
+function fmt(n) { return Math.round(n).toLocaleString() + ' ' + CURRENCY; }
+
+function recalculate() {
+    const items       = Object.values(itemMap);
+    const allSelected = items.every(i => i.action !== null);
+
+    // TOTAL = ALL items (both pay and deposit consume from free balance)
+    const totalAll     = items.reduce((s, i) => s + i.amount, 0);
+    const shortfall    = Math.max(0, totalAll - walletFree);
+
+    const payTotal     = items.filter(i => i.action === 'pay')    .reduce((s,i)=>s+i.amount,0);
+    const depositTotal = items.filter(i => i.action === 'deposit').reduce((s,i)=>s+i.amount,0);
+    const selectedLen  = items.filter(i => i.action !== null).length;
+
+    // Top-up notice
+    const notice = document.getElementById('topupNotice');
+    if (shortfall > 0) {
+        notice.classList.remove('hidden');
+        document.getElementById('orderTotalInNotice').textContent    = fmt(totalAll);
+        document.getElementById('freeBalanceInNotice').textContent   = fmt(walletFree);
+        document.getElementById('topupAmount').textContent           = fmt(Math.ceil(shortfall));
+    } else {
+        notice.classList.add('hidden');
+    }
+
+    // Summary preview
+    const summaryEl = document.getElementById('orderSummary');
+    const rowsEl    = document.getElementById('summaryRows');
+    if (selectedLen > 0) {
+        summaryEl.classList.remove('hidden');
+        let html = '';
+        if (payTotal > 0)
+            html += `<div class="flex justify-between">
+                        <span class="text-white/60">💳 Paying to sellers</span>
+                        <span class="font-black text-white">${fmt(payTotal)}</span></div>`;
+        if (depositTotal > 0)
+            html += `<div class="flex justify-between">
+                        <span class="text-white/60">🔒 Reserving in wallet</span>
+                        <span class="font-black text-primary">${fmt(depositTotal)}</span></div>`;
+        if (shortfall > 0)
+            html += `<div class="flex justify-between border-t border-white/10 pt-1 mt-1">
+                        <span class="text-white/60">⚡ Top-up required</span>
+                        <span class="font-black text-primary">${fmt(Math.ceil(shortfall))}</span></div>`;
+        rowsEl.innerHTML = html;
+    } else {
+        summaryEl.classList.add('hidden');
+    }
+
+    // Submit button
+    const btn = document.getElementById('submitBtn');
+    if (!allSelected) {
+        btn.disabled      = true;
+        btn.textContent   = `Select an action for all ${items.length} item${items.length!==1?'s':''}`;
+        return;
+    }
+    btn.disabled = false;
+    if (payTotal > 0 && depositTotal > 0)
+        btn.textContent = shortfall > 0 ? '⚡ Top Up, Pay & Reserve' : '💳 Pay & Reserve';
+    else if (payTotal > 0)
+        btn.textContent = shortfall > 0 ? '⚡ Top Up & Pay Now' : '💳 Pay Now';
+    else
+        btn.textContent = shortfall > 0 ? '⚡ Top Up & Reserve Funds' : '🔒 Reserve in Wallet';
+}
+
+// ─── PIN INPUTS ──────────────────────────────────────────────────────────────
+document.querySelectorAll('.pin-input').forEach((input, idx, all) => {
+    input.addEventListener('input', function () {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        if (this.value && idx < all.length - 1) all[idx + 1].focus();
+    });
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && idx > 0) all[idx - 1].focus();
+    });
+    input.addEventListener('keypress', function (e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+});
 document.getElementById('pin1')?.focus();
 
-// ============= SUFFICIENT BALANCE: Direct Payment =============
-if (HAS_SUFFICIENT) {
-    document.getElementById('paymentForm')?.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const pin = ['pin1', 'pin2', 'pin3', 'pin4']
-            .map(id => document.getElementById(id).value)
-            .join('');
-        
-        if (pin.length !== 4) {
-            showStatus('Enter complete PIN', 'error');
-            return;
-        }
-        
-        document.getElementById('pin').value = pin;
-        
-        const payBtn = document.getElementById('payBtn');
-        payBtn.disabled = true;
-        payBtn.textContent = 'Processing...';
-        
-        const formData = new FormData(this);
-        
-        try {
-            const response = await fetch(`/payment/${REQUEST_ID}/process-pin/`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
-                payBtn.textContent = 'Success!';
-                payBtn.classList.remove('bg-primary');
-                payBtn.classList.add('bg-white');
-                
-                window.parent.postMessage({
-                    type: 'payment_success',
-                    request_id: REQUEST_ID,
-                    amount: String(TOTAL_AMOUNT)
-                }, '*');
-                
-                showStatus('Payment Successful!', 'success');
-            } else {
-                showStatus(data.error || 'Payment failed', 'error');
-                clearPinInputs();
-                payBtn.disabled = false;
-                payBtn.textContent = `Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
-            }
-        } catch (error) {
-            showStatus('Network error', 'error');
-            payBtn.disabled = false;
-            payBtn.textContent = `Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
-        }
-    });
-}
+function getPin()   { return ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id)?.value||'').join(''); }
+function clearPin() { ['pin1','pin2','pin3','pin4'].forEach(id => { const e=document.getElementById(id); if(e) e.value=''; }); document.getElementById('pin1')?.focus(); }
 
-// ============= INSUFFICIENT BALANCE: Deposit + Pay =============
-if (!HAS_SUFFICIENT) {
-    document.getElementById('depositPayForm')?.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const pin = ['pin1', 'pin2', 'pin3', 'pin4']
-            .map(id => document.getElementById(id).value)
-            .join('');
-        
-        if (pin.length !== 4) {
-            showStatus('Enter complete PIN', 'error');
-            return;
-        }
-        
-        const phoneNumber = document.getElementById('phone_number').value.trim();
-        if (!phoneNumber) {
-            showStatus('Enter your mobile money number', 'error');
-            return;
-        }
-        
-        document.getElementById('pin').value = pin;
-        
-        const payBtn = document.getElementById('payBtn');
-        payBtn.disabled = true;
-        payBtn.textContent = 'Processing...';
-        
-        // Show progress steps
-        const progressSteps = document.getElementById('progressSteps');
-        progressSteps.classList.remove('hidden');
-        
-        // Step 1: Initiating
-        updateStep(1, 'active');
-        
-        const formData = new FormData(this);
-        
-        try {
-            // Simulate step progression for UX
-            setTimeout(() => updateStep(2, 'active'), 800);
-            setTimeout(() => updateStep(3, 'active'), 1600);
-            
-            const response = await fetch(`/payment/${REQUEST_ID}/deposit-and-pay/`, {
-                method: 'POST',
-                body: formData
-            });
-            
-            const data = await response.json();
-            
-            if (response.ok && data.success) {
-                // Mark all steps complete
-                updateStep(1, 'complete');
-                updateStep(2, 'complete');
-                updateStep(3, 'complete');
-                
-                payBtn.textContent = 'Success!';
-                payBtn.classList.remove('bg-primary');
-                payBtn.classList.add('bg-white');
-                
-                // Notify parent iframe
-                window.parent.postMessage({
-                    type: 'payment_success',
-                    request_id: REQUEST_ID,
-                    amount: String(TOTAL_AMOUNT)
-                }, '*');
-                
-                showStatus('Payment Successful!', 'success');
-                
-                if (data.deposited && parseFloat(data.deposited) > 0) {
-                    setTimeout(() => {
-                        showStatus(
-                            `Deposited ${parseFloat(data.deposited).toLocaleString()} UGX & Paid ${TOTAL_AMOUNT.toLocaleString()} UGX`, 
-                            'success'
-                        );
-                    }, 1500);
-                }
-            } else {
-                progressSteps.classList.add('hidden');
-                
-                let errorMsg = data.error || 'Payment failed';
-                if (data.deposit_failed) {
-                    errorMsg = 'Deposit failed: ' + errorMsg;
-                }
-                
-                showStatus(errorMsg, 'error');
-                clearPinInputs();
-                payBtn.disabled = false;
-                payBtn.textContent = `Deposit & Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
-            }
-        } catch (error) {
-            progressSteps.classList.add('hidden');
-            showStatus('Network error. Please try again.', 'error');
-            payBtn.disabled = false;
-            payBtn.textContent = `Deposit & Pay ${TOTAL_AMOUNT.toLocaleString()} UGX`;
-        }
-    });
-}
-
-// ============= Helper Functions =============
-
-function updateStep(stepNum, state) {
-    const icon = document.getElementById(`step${stepNum}Icon`);
-    const text = icon?.parentElement?.querySelector('span');
-    
+// ─── STEP HELPERS ────────────────────────────────────────────────────────────
+function setStep(n, state) {
+    const icon = document.getElementById(`s${n}Icon`);
+    const text = document.getElementById(`s${n}Text`);
     if (!icon) return;
-    
+    // Reset
+    icon.className = 'step-icon w-6 h-6 border-2 flex items-center justify-center text-xs font-black ';
+    text?.classList.remove('text-white/30', 'text-white', 'text-primary');
     if (state === 'active') {
-        icon.classList.remove('border-white/30', 'text-white/30');
-        icon.classList.add('border-primary', 'text-primary');
-        if (text) {
-            text.classList.remove('text-white/30');
-            text.classList.add('text-white');
-        }
+        icon.className += 'border-white text-white';
+        text?.classList.add('text-white');
     } else if (state === 'complete') {
-        icon.classList.remove('border-white/30', 'text-white/30', 'border-primary', 'text-primary');
-        icon.classList.add('border-primary', 'bg-primary', 'text-black');
+        icon.className += 'border-primary bg-primary text-black';
         icon.textContent = '✓';
-        if (text) {
-            text.classList.remove('text-white/30');
-            text.classList.add('text-primary');
+        text?.classList.add('text-primary');
+    } else { // pending
+        icon.className += 'border-white/30 text-white/30';
+        text?.classList.add('text-white/30');
+    }
+}
+
+function showStatus(msg, type) {
+    const el = document.getElementById('statusMsg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = `border-2 p-3 text-xs font-black uppercase text-center mb-4 ` +
+        (type === 'error' ? 'border-white bg-white text-black' : 'border-primary bg-primary text-black');
+    el.classList.remove('hidden');
+}
+
+function updateItemBadge(itemId, status, label) {
+    const wrap = document.querySelector(`.item-status[data-item-id="${itemId}"]`);
+    if (!wrap) return;
+    wrap.classList.remove('hidden');
+    const badge = wrap.querySelector('span');
+    const cls = { paid:'bg-primary text-black', deposited:'bg-black text-primary border border-primary', failed:'bg-red-600 text-white' };
+    badge.className = `inline-block px-2 py-1 text-xs font-black uppercase ${cls[status]||''}`;
+    badge.textContent = label;
+}
+
+// ─── SUBMIT ──────────────────────────────────────────────────────────────────
+document.getElementById('submitBtn').addEventListener('click', async function () {
+    const pin = getPin();
+    if (pin.length !== 4) { showStatus('Enter your 4-digit PIN', 'error'); return; }
+
+    // Phone required only when top-up is needed
+    const totalAll  = Object.values(itemMap).reduce((s,i) => s + i.amount, 0);
+    const shortfall = Math.max(0, totalAll - walletFree);
+    const phoneEl   = document.getElementById('phone_number');
+    const phone     = phoneEl?.value?.trim() || '';
+    if (shortfall > 0 && !phone) {
+        showStatus('Enter your mobile money number for the top-up', 'error');
+        phoneEl?.focus();
+        return;
+    }
+
+    const btn = this;
+    btn.disabled = true;
+    const origText = btn.textContent;
+    btn.textContent = 'Processing…';
+
+    document.getElementById('progressSteps').classList.remove('hidden');
+    setStep(1, 'active'); setStep(2, 'pending'); setStep(3, 'pending');
+
+    const itemActions = Object.entries(itemMap).map(([id, d]) => ({ item_id: parseInt(id), action: d.action }));
+    const fd = new FormData();
+    fd.append('email',        BUYER_EMAIL);
+    fd.append('pin',          pin);
+    fd.append('item_actions', JSON.stringify(itemActions));
+    if (phone) fd.append('phone_number', phone);
+
+    const t2 = setTimeout(() => setStep(2, 'active'), 900);
+    const t3 = setTimeout(() => setStep(3, 'active'), 1800);
+
+    try {
+        const resp = await fetch(`/payment/${REQUEST_ID}/process-items/`, { method:'POST', body:fd });
+        clearTimeout(t2); clearTimeout(t3);
+        const data = await resp.json();
+
+        if (resp.ok && data.success) {
+            setStep(1,'complete'); setStep(2,'complete'); setStep(3,'complete');
+            btn.textContent = '✓ Done!';
+            btn.classList.replace('bg-primary','bg-white');
+
+            // Update per-item badges
+            (data.item_results||[]).forEach(r => {
+                updateItemBadge(r.item_id, r.status,
+                    { paid:'Paid ✓', deposited:'🔒 Reserved', failed:'Failed ✗' }[r.status] || r.status);
+            });
+
+            // Refresh wallet display with server-returned figures
+            if (data.wallet_balance !== undefined)
+                document.getElementById('walletBalanceDisplay').textContent =
+                    Math.round(parseFloat(data.wallet_balance)).toLocaleString() + ' ' + CURRENCY;
+            if (data.wallet_free !== undefined) {
+                walletFree = parseFloat(data.wallet_free);
+                document.getElementById('walletFreeDisplay').textContent =
+                    Math.round(walletFree).toLocaleString();
+            }
+            const resEl = document.getElementById('walletReservedDisplay');
+            if (resEl && data.wallet_reserved !== undefined)
+                resEl.textContent = Math.round(parseFloat(data.wallet_reserved)).toLocaleString();
+
+            showStatus(data.message || 'Success!', 'success');
+
+            // PostMessage to parent iframe
+            const hasDeposited = (data.item_results||[]).some(r=>r.status==='deposited');
+            const hasPaid      = (data.item_results||[]).some(r=>r.status==='paid');
+            const msgType = (hasDeposited && !hasPaid) ? 'payment_deposited'
+                          : (hasDeposited && hasPaid)  ? 'payment_mixed'
+                          : 'payment_success';
+            setTimeout(() => {
+                window.parent.postMessage({ type: msgType, request_id: REQUEST_ID }, '*');
+            }, 1200);
+
+        } else {
+            document.getElementById('progressSteps').classList.add('hidden');
+            showStatus(data.error || 'Something went wrong. Please try again.', 'error');
+            clearPin();
+            btn.disabled    = false;
+            btn.textContent = origText;
         }
-    }
-}
 
-function clearPinInputs() {
-    ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
-        document.getElementById(id).value = '';
-    });
-    document.getElementById('pin1').focus();
-}
-
-function showStatus(message, type) {
-    const statusMsg = document.getElementById('statusMsg');
-    statusMsg.textContent = message;
-    statusMsg.classList.remove('hidden', 'bg-white', 'bg-primary');
-    
-    if (type === 'error') {
-        statusMsg.classList.add('bg-white');
-        statusMsg.style.color = 'black';
-    } else {
-        statusMsg.classList.add('bg-primary');
-        statusMsg.style.color = 'black';
+    } catch (err) {
+        clearTimeout(t2); clearTimeout(t3);
+        document.getElementById('progressSteps').classList.add('hidden');
+        showStatus('Network error. Please try again.', 'error');
+        clearPin();
+        btn.disabled    = false;
+        btn.textContent = origText;
     }
-}
+});
 </script>
 {% endblock %}

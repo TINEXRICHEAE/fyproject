@@ -12,6 +12,7 @@ from django.core.cache import cache
 from decimal import Decimal
 import logging
 import hashlib
+import json
 
 from .models import (
     Users, Wallet, PaymentRequest, Transaction, 
@@ -876,3 +877,774 @@ def seller_request_cashout(request):
         'pending_requests': pending_requests,
     }
     return render(request, 'seller_request_cashout.html', context)
+
+
+
+@csrf_exempt
+@xframe_options_exempt
+def process_payment_items(request, request_id):
+    """
+    Per-item payment processing.
+
+    Actions:
+      'pay'     → buyer wallet → seller wallet  (immediate transfer)
+      'deposit' → funds STAY in buyer wallet, reserved_balance += item.amount
+                  balance is NOT reduced; seller sees funds are secured
+
+    Flow:
+      1. total_needed = sum of ALL item amounts
+      2. shortfall    = max(0, total_needed - wallet.free_balance)
+      3. If shortfall > 0: one mobile-money top-up (phone_number required)
+      4. For each item:
+           'pay'     → deduct balance, credit seller
+           'deposit' → increment reserved_balance, balance unchanged
+
+    POST (multipart/form-data):
+        email        — buyer email
+        pin          — 4-digit PIN
+        item_actions — JSON: [{"item_id": 1, "action": "pay"|"deposit"}, ...]
+        phone_number — required only when shortfall > 0
+
+    Returns JSON:
+        success, message, item_results, overall_status,
+        wallet_balance, wallet_reserved, wallet_free
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+
+    try:
+        data             = request.POST
+        email            = data.get('email')
+        pin              = data.get('pin')
+        item_actions_raw = data.get('item_actions', '[]')
+        phone_number     = data.get('phone_number', '').strip()
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN are required'}, status=400)
+
+        try:
+            item_actions = json.loads(item_actions_raw)
+        except (json.JSONDecodeError, TypeError):
+            return JsonResponse({'error': 'Invalid item_actions format'}, status=400)
+
+        if not item_actions:
+            return JsonResponse({'error': 'No item actions provided'}, status=400)
+
+        # ── Payment request ───────────────────────────────────────────────
+        try:
+            payment_request = PaymentRequest.objects.get(request_id=request_id)
+        except PaymentRequest.DoesNotExist:
+            return JsonResponse({'error': 'Payment request not found'}, status=404)
+
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorised'}, status=403)
+
+        # ── Buyer ─────────────────────────────────────────────────────────
+        try:
+            buyer = Users.objects.get(email=email, role='buyer')
+        except Users.DoesNotExist:
+            return JsonResponse({'error': 'Buyer not found'}, status=404)
+
+        # ── PIN verification ──────────────────────────────────────────────
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        if not pin_result['valid']:
+            resp = {'error': pin_result['error']}
+            if pin_result.get('attempts_remaining') is not None:
+                resp['attempts_remaining'] = pin_result['attempts_remaining']
+            return JsonResponse(resp, status=401)
+
+        # ── Build action map ──────────────────────────────────────────────
+        action_map = {int(ia['item_id']): ia['action'] for ia in item_actions}
+
+        request_items = {
+            item.item_id: item for item in payment_request.items.all()
+        }
+
+        # ── Validate ──────────────────────────────────────────────────────
+        valid_actions = {'pay', 'deposit'}
+        for item_id, action in action_map.items():
+            if action not in valid_actions:
+                return JsonResponse(
+                    {'error': f"Invalid action '{action}' for item {item_id}. Use 'pay' or 'deposit'."},
+                    status=400
+                )
+            if item_id not in request_items:
+                return JsonResponse(
+                    {'error': f"Item {item_id} not found in this payment request"},
+                    status=404
+                )
+
+        # ── STEP 1: Unified shortfall ─────────────────────────────────────
+        total_all = sum(request_items[iid].amount for iid in action_map)
+
+        buyer_wallet = buyer.wallet
+        buyer_wallet.refresh_from_db()
+        free_balance = buyer_wallet.free_balance   # balance - reserved_balance
+
+        shortfall = max(Decimal('0'), total_all - free_balance)
+
+        logger.info(
+            f"💳 process_payment_items: {email} | "
+            f"total={total_all} | free={free_balance} | shortfall={shortfall}"
+        )
+
+        # ── STEP 2: Top up if shortfall > 0 ──────────────────────────────
+        if shortfall > Decimal('0'):
+            if not phone_number:
+                return JsonResponse({
+                    'error':       'Mobile money number required for wallet top-up',
+                    'shortfall':   str(shortfall),
+                    'needs_topup': True,
+                }, status=400)
+
+            platform = payment_request.platform
+            if not platform:
+                return JsonResponse({'error': 'No payment platform configured'}, status=400)
+
+            from .payment_processor import process_deposit, complete_pending_deposit
+
+            logger.info(f"💰 Topping up {shortfall} UGX for {email}")
+
+            dep_result = process_deposit(
+                user=buyer,
+                platform=platform,
+                amount=shortfall,
+                phone_number=phone_number,
+            )
+
+            if dep_result['status'] != 'success':
+                logger.error(f"❌ Top-up failed: {dep_result.get('message')}")
+                return JsonResponse({
+                    'error':          dep_result.get('message', 'Top-up failed. Please try again.'),
+                    'deposit_failed': True,
+                }, status=400)
+
+            comp = complete_pending_deposit(
+                transaction_id=dep_result['transaction_id'],
+                external_reference=dep_result['reference_id'],
+            )
+
+            if comp['status'] != 'success':
+                return JsonResponse({
+                    'error':          'Top-up could not be completed. Please try again.',
+                    'deposit_failed': True,
+                }, status=400)
+
+            logger.info(f"✅ Top-up of {shortfall} UGX completed for {email}")
+            buyer_wallet.refresh_from_db()
+
+        # ── STEP 3: Process each item atomically ──────────────────────────
+        item_results = []
+
+        with db_transaction.atomic():
+            buyer_wl = Wallet.objects.select_for_update().get(pk=buyer_wallet.pk)
+
+            for item_id, action in action_map.items():
+                item = request_items[item_id]
+                try:
+                    if action == 'pay':
+                        # ── Immediate transfer: buyer → seller ────────────
+                        if buyer_wl.free_balance < item.amount:
+                            raise ValueError(
+                                f"Insufficient free balance for item {item_id}. "
+                                f"Required: {item.amount}, Free: {buyer_wl.free_balance}"
+                            )
+
+                        seller        = Users.objects.get(email=item.seller_email, role='seller')
+                        seller_wl     = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+                        txn = Transaction.objects.create(
+                            platform=payment_request.platform,
+                            from_wallet=buyer_wl,
+                            to_wallet=seller_wl,
+                            amount=item.amount,
+                            transaction_type='transfer',
+                            status='completed',
+                            description=f'Payment: {item.product_description or item.seller_email}',
+                        )
+
+                        buyer_wl.balance  -= item.amount
+                        seller_wl.balance += item.amount
+                        buyer_wl.save(update_fields=['balance', 'updated_at'])
+                        seller_wl.save(update_fields=['balance', 'updated_at'])
+
+                        item.transaction = txn
+                        item.save(update_fields=['transaction', 'updated_at'])
+
+                        item_results.append({'item_id': item_id, 'status': 'paid',      'amount': str(item.amount)})
+                        logger.info(f"  Item {item_id} → paid ({item.amount})")
+
+                    elif action == 'deposit':
+                        # ── Reserve in wallet (balance stays, reserved grows) ──
+                        if buyer_wl.free_balance < item.amount:
+                            raise ValueError(
+                                f"Insufficient free balance to reserve item {item_id}. "
+                                f"Required: {item.amount}, Free: {buyer_wl.free_balance}"
+                            )
+
+                        buyer_wl.reserved_balance += item.amount
+                        buyer_wl.save(update_fields=['reserved_balance', 'updated_at'])
+                        # balance deliberately NOT changed
+
+                        item.is_deposited     = True
+                        item.deposited_amount = item.amount
+                        item.deposited_at     = timezone.now()
+                        item.save(update_fields=[
+                            'is_deposited', 'deposited_amount', 'deposited_at', 'updated_at'
+                        ])
+
+                        item_results.append({'item_id': item_id, 'status': 'deposited', 'amount': str(item.amount)})
+                        logger.info(f"  Item {item_id} → deposited/reserved ({item.amount})")
+
+                except Exception as err:
+                    logger.error(f"❌ Item {item_id} failed: {err}", exc_info=True)
+                    item_results.append({'item_id': item_id, 'status': 'failed', 'amount': str(item.amount), 'error': str(err)})
+
+            # ── Update PaymentRequest status ──────────────────────────────
+            statuses = [r['status'] for r in item_results]
+            if   all(s == 'paid'      for s in statuses): overall_status = 'paid';      payment_request.status = 'paid'
+            elif all(s == 'deposited' for s in statuses): overall_status = 'deposited'; payment_request.status = 'awaiting_payment'
+            elif all(s == 'failed'    for s in statuses): overall_status = 'failed';    payment_request.status = 'failed'
+            else:                                         overall_status = 'partial';   payment_request.status = 'awaiting_payment'
+            payment_request.save(update_fields=['status', 'updated_at'])
+
+            buyer_wl.refresh_from_db()
+
+        # ── STEP 4: Notify shopping app ───────────────────────────────────
+        _notify_shopping_app(payment_request, item_results, overall_status)
+
+        paid_count = sum(1 for r in item_results if r['status'] == 'paid')
+        dep_count  = sum(1 for r in item_results if r['status'] == 'deposited')
+        fail_count = sum(1 for r in item_results if r['status'] == 'failed')
+        parts = []
+        if paid_count:  parts.append(f"{paid_count} item(s) paid")
+        if dep_count:   parts.append(f"{dep_count} item(s) deposited to wallet")
+        if fail_count:  parts.append(f"{fail_count} item(s) failed")
+
+        logger.info(f"✅ process_payment_items complete for {email}: {overall_status}")
+
+        return JsonResponse({
+            'success':         True,
+            'message':         '. '.join(parts) + '.' if parts else 'Done.',
+            'item_results':    item_results,
+            'overall_status':  overall_status,
+            'wallet_balance':  str(buyer_wl.balance),
+            'wallet_reserved': str(buyer_wl.reserved_balance),
+            'wallet_free':     str(buyer_wl.free_balance),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ process_payment_items error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Payment processing failed. Please try again.'}, status=500)
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# complete_deposit_item — buyer pays seller from reserved funds
+# ═════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@xframe_options_exempt
+def complete_deposit_item(request, request_id, item_id):
+    """
+    Buyer completes a previously deposited item — transfers reserved funds to seller.
+
+    wallet.balance          -= amount   (total funds decrease)
+    wallet.reserved_balance -= amount   (reservation released)
+    seller.wallet.balance   += amount
+    free_balance is unchanged (was already reduced at deposit time).
+
+    POST: { email, pin }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+
+    try:
+        email = request.POST.get('email')
+        pin   = request.POST.get('pin')
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN required'}, status=400)
+
+        payment_request = PaymentRequest.objects.get(request_id=request_id)
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorised'}, status=403)
+
+        buyer      = Users.objects.get(email=email, role='buyer')
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        if not pin_result['valid']:
+            return JsonResponse({'error': pin_result['error']}, status=401)
+
+        item   = PaymentRequestItem.objects.get(item_id=item_id, payment_request=payment_request, is_deposited=True)
+        amount = item.deposited_amount or item.amount
+
+        with db_transaction.atomic():
+            buyer_wl  = Wallet.objects.select_for_update().get(pk=buyer.wallet.pk)
+            seller    = Users.objects.get(email=item.seller_email, role='seller')
+            seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+            if buyer_wl.balance < amount:
+                return JsonResponse({'error': 'Insufficient wallet balance'}, status=400)
+            if buyer_wl.reserved_balance < amount:
+                return JsonResponse({'error': 'Reserved balance mismatch'}, status=400)
+
+            txn = Transaction.objects.create(
+                platform=payment_request.platform,
+                from_wallet=buyer_wl,
+                to_wallet=seller_wl,
+                amount=amount,
+                transaction_type='transfer',
+                status='completed',
+                description=f'Deposit completion: {item.product_description or item.seller_email}',
+            )
+
+            buyer_wl.balance          -= amount
+            buyer_wl.reserved_balance -= amount
+            seller_wl.balance         += amount
+            buyer_wl.save(update_fields=['balance', 'reserved_balance', 'updated_at'])
+            seller_wl.save(update_fields=['balance', 'updated_at'])
+
+            item.transaction  = txn
+            item.is_deposited = False
+            item.save(update_fields=['transaction', 'is_deposited', 'updated_at'])
+
+        _notify_shopping_app(
+            payment_request,
+            [{'item_id': int(item_id), 'status': 'paid', 'amount': str(amount)}],
+            'paid',
+        )
+
+        logger.info(f"✅ Deposit completed: item {item_id} for {email}")
+        return JsonResponse({'success': True, 'amount': str(amount)})
+
+    except PaymentRequestItem.DoesNotExist:
+        return JsonResponse({'error': 'Deposited item not found'}, status=404)
+    except Exception as e:
+        logger.error(f"❌ complete_deposit error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Could not complete deposit'}, status=500)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# cancel_deposit_item — buyer releases reserved funds back to free balance
+# ═════════════════════════════════════════════════════════════════════════════
+
+@csrf_exempt
+@xframe_options_exempt
+def cancel_deposit_item(request, request_id, item_id):
+    """
+    Buyer cancels a pending deposit — reserved funds freed, nothing leaves wallet.
+
+    wallet.reserved_balance -= amount   (reservation released)
+    wallet.balance unchanged
+    OrderItem.payment_status → 'pending'  (via webhook)
+
+    POST: { email, pin }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+
+    try:
+        email = request.POST.get('email')
+        pin   = request.POST.get('pin')
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN required'}, status=400)
+
+        payment_request = PaymentRequest.objects.get(request_id=request_id)
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorised'}, status=403)
+
+        buyer      = Users.objects.get(email=email, role='buyer')
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        if not pin_result['valid']:
+            return JsonResponse({'error': pin_result['error']}, status=401)
+
+        item   = PaymentRequestItem.objects.get(item_id=item_id, payment_request=payment_request, is_deposited=True)
+        amount = item.deposited_amount or item.amount
+
+        with db_transaction.atomic():
+            buyer_wl = Wallet.objects.select_for_update().get(pk=buyer.wallet.pk)
+            if buyer_wl.reserved_balance < amount:
+                return JsonResponse({'error': 'Reserved balance mismatch'}, status=400)
+
+            buyer_wl.reserved_balance -= amount
+            buyer_wl.save(update_fields=['reserved_balance', 'updated_at'])
+
+            item.is_deposited     = False
+            item.deposited_amount = None
+            item.deposited_at     = None
+            item.save(update_fields=['is_deposited', 'deposited_amount', 'deposited_at', 'updated_at'])
+
+        _notify_shopping_app(
+            payment_request,
+            [{'item_id': int(item_id), 'status': 'pending', 'amount': str(amount)}],
+            'partial',
+        )
+
+        logger.info(f"✅ Deposit cancelled: item {item_id} for {email}")
+        return JsonResponse({'success': True, 'amount_freed': str(amount)})
+
+    except PaymentRequestItem.DoesNotExist:
+        return JsonResponse({'error': 'Deposited item not found'}, status=404)
+    except Exception as e:
+        logger.error(f"❌ cancel_deposit error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Could not cancel deposit'}, status=500)
+
+
+@csrf_exempt
+@xframe_options_exempt
+def complete_deposit_by_order_item(request, request_id, shopping_order_item_id):
+    """
+    Shopping-app-facing endpoint: complete a pending deposit identified by
+    shopping_order_item_id (the OrderItem.id on the shopping side).
+
+    Transfers reserved funds: buyer wallet → seller wallet.
+      wallet.balance          -= amount
+      wallet.reserved_balance -= amount
+      seller.wallet.balance   += amount
+      (free_balance unchanged — was already reduced at deposit time)
+
+    POST (multipart/form-data or JSON):
+        email — buyer email
+        pin   — 4-digit wallet PIN
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+
+    try:
+        # Support both form-data and JSON body
+        if request.content_type and 'application/json' in request.content_type:
+            import json as _json
+            body = _json.loads(request.body)
+            email = body.get('email')
+            pin   = body.get('pin')
+        else:
+            email = request.POST.get('email')
+            pin   = request.POST.get('pin')
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN required'}, status=400)
+
+        # ── Locate payment request ────────────────────────────────────────
+        try:
+            payment_request = PaymentRequest.objects.get(request_id=request_id)
+        except PaymentRequest.DoesNotExist:
+            return JsonResponse({'error': 'Payment request not found'}, status=404)
+
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorised'}, status=403)
+
+        # ── Verify buyer + PIN ────────────────────────────────────────────
+        try:
+            buyer = Users.objects.get(email=email, role='buyer')
+        except Users.DoesNotExist:
+            return JsonResponse({'error': 'Buyer not found'}, status=404)
+
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        if not pin_result['valid']:
+            resp = {'error': pin_result['error']}
+            if pin_result.get('attempts_remaining') is not None:
+                resp['attempts_remaining'] = pin_result['attempts_remaining']
+            return JsonResponse(resp, status=401)
+
+        # ── Find the deposited PaymentRequestItem by shopping_order_item_id ──
+        try:
+            item = PaymentRequestItem.objects.get(
+                payment_request=payment_request,
+                shopping_order_item_id=shopping_order_item_id,
+                is_deposited=True,
+            )
+        except PaymentRequestItem.DoesNotExist:
+            return JsonResponse(
+                {'error': f'No deposited item found for order item {shopping_order_item_id}'},
+                status=404,
+            )
+
+        amount = item.deposited_amount or item.amount
+
+        # ── Transfer ──────────────────────────────────────────────────────
+        with db_transaction.atomic():
+            buyer_wl  = Wallet.objects.select_for_update().get(pk=buyer.wallet.pk)
+            seller    = Users.objects.get(email=item.seller_email, role='seller')
+            seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+            if buyer_wl.balance < amount:
+                return JsonResponse({'error': 'Insufficient wallet balance'}, status=400)
+            if buyer_wl.reserved_balance < amount:
+                return JsonResponse({'error': 'Reserved balance mismatch'}, status=400)
+
+            txn = Transaction.objects.create(
+                platform=payment_request.platform,
+                from_wallet=buyer_wl,
+                to_wallet=seller_wl,
+                amount=amount,
+                transaction_type='transfer',
+                status='completed',
+                description=f'Deposit completion: {item.product_description or item.seller_email}',
+            )
+
+            buyer_wl.balance          -= amount
+            buyer_wl.reserved_balance -= amount
+            seller_wl.balance         += amount
+            buyer_wl.save(update_fields=['balance', 'reserved_balance', 'updated_at'])
+            seller_wl.save(update_fields=['balance', 'updated_at'])
+
+            item.transaction  = txn
+            item.is_deposited = False
+            item.save(update_fields=['transaction', 'is_deposited', 'updated_at'])
+
+        # ── Notify shopping app ───────────────────────────────────────────
+        _notify_shopping_app(
+            payment_request,
+            [{'item_id': item.item_id, 'status': 'paid', 'amount': str(amount)}],
+            'paid',
+        )
+
+        logger.info(
+            f"✅ Deposit completed via shopping-item endpoint: "
+            f"shopping_order_item_id={shopping_order_item_id} for {email}"
+        )
+
+        return JsonResponse({
+            'success':                True,
+            'amount':                 str(amount),
+            'shopping_order_item_id': shopping_order_item_id,
+            'wallet_balance':         str(buyer_wl.balance),
+            'wallet_reserved':        str(buyer_wl.reserved_balance),
+            'wallet_free':            str(buyer_wl.free_balance),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ complete_deposit_by_order_item error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Could not complete deposit'}, status=500)
+
+
+@csrf_exempt
+@xframe_options_exempt
+def cancel_deposit_by_order_item(request, request_id, shopping_order_item_id):
+    """
+    Shopping-app-facing endpoint: cancel a pending deposit identified by
+    shopping_order_item_id.
+
+    Releases the reservation — nothing leaves the wallet.
+      wallet.reserved_balance -= amount
+      wallet.balance unchanged
+    Shopping app webhook will set OrderItem.payment_status → 'pending'.
+
+    POST (multipart/form-data or JSON):
+        email — buyer email
+        pin   — 4-digit wallet PIN
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Invalid method'}, status=400)
+
+    try:
+        if request.content_type and 'application/json' in request.content_type:
+            import json as _json
+            body = _json.loads(request.body)
+            email = body.get('email')
+            pin   = body.get('pin')
+        else:
+            email = request.POST.get('email')
+            pin   = request.POST.get('pin')
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN required'}, status=400)
+
+        try:
+            payment_request = PaymentRequest.objects.get(request_id=request_id)
+        except PaymentRequest.DoesNotExist:
+            return JsonResponse({'error': 'Payment request not found'}, status=404)
+
+        if email != payment_request.buyer_email:
+            return JsonResponse({'error': 'Unauthorised'}, status=403)
+
+        try:
+            buyer = Users.objects.get(email=email, role='buyer')
+        except Users.DoesNotExist:
+            return JsonResponse({'error': 'Buyer not found'}, status=404)
+
+        pin_result = PINAuthenticator.verify_pin(buyer, pin)
+        if not pin_result['valid']:
+            resp = {'error': pin_result['error']}
+            if pin_result.get('attempts_remaining') is not None:
+                resp['attempts_remaining'] = pin_result['attempts_remaining']
+            return JsonResponse(resp, status=401)
+
+        try:
+            item = PaymentRequestItem.objects.get(
+                payment_request=payment_request,
+                shopping_order_item_id=shopping_order_item_id,
+                is_deposited=True,
+            )
+        except PaymentRequestItem.DoesNotExist:
+            return JsonResponse(
+                {'error': f'No deposited item found for order item {shopping_order_item_id}'},
+                status=404,
+            )
+
+        amount = item.deposited_amount or item.amount
+
+        with db_transaction.atomic():
+            buyer_wl = Wallet.objects.select_for_update().get(pk=buyer.wallet.pk)
+
+            if buyer_wl.reserved_balance < amount:
+                return JsonResponse({'error': 'Reserved balance mismatch'}, status=400)
+
+            buyer_wl.reserved_balance -= amount
+            buyer_wl.save(update_fields=['reserved_balance', 'updated_at'])
+
+            item.is_deposited     = False
+            item.deposited_amount = None
+            item.deposited_at     = None
+            item.save(update_fields=[
+                'is_deposited', 'deposited_amount', 'deposited_at', 'updated_at'
+            ])
+
+        _notify_shopping_app(
+            payment_request,
+            [{'item_id': item.item_id, 'status': 'pending', 'amount': str(amount)}],
+            'partial',
+        )
+
+        logger.info(
+            f"✅ Deposit cancelled via shopping-item endpoint: "
+            f"shopping_order_item_id={shopping_order_item_id} for {email}"
+        )
+
+        return JsonResponse({
+            'success':                True,
+            'amount_freed':           str(amount),
+            'shopping_order_item_id': shopping_order_item_id,
+            'wallet_balance':         str(buyer_wl.balance),
+            'wallet_reserved':        str(buyer_wl.reserved_balance),
+            'wallet_free':            str(buyer_wl.free_balance),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ cancel_deposit_by_order_item error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Could not cancel deposit'}, status=500)
+
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# _notify_shopping_app  (non-blocking webhook to shopping app)
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _notify_shopping_app(payment_request, item_results, overall_status):
+    """Send per-item status updates to the shopping app. Failure is non-fatal."""
+    import requests as http_requests, os
+
+    try:
+        webhook_url = (
+            # getattr(payment_request.platform, 'callback_url', None)
+            # or (payment_request.metadata or {}).get('webhook_url')
+            os.getenv('SHOPPING_APP_WEBHOOK_URL', 'http://localhost:8000/api/webhook/payment-status/')
+        )
+    except Exception:
+        webhook_url = 'http://localhost:8000/api/webhook/payment-status/'
+
+    items_by_id = {item.item_id: item for item in payment_request.items.all()}
+
+    item_updates = []
+    for result in item_results:
+        item = items_by_id.get(result['item_id'])
+        if not item or not item.shopping_order_item_id:
+            if item:
+                logger.warning(f"⚠️ Item {item.item_id} has no shopping_order_item_id - skipping webhook")
+            continue
+        item_updates.append({
+            'shopping_order_item_id': item.shopping_order_item_id,
+            'status':  result['status'],
+            'amount':  result.get('amount', str(item.amount)),
+        })
+
+    if not item_updates:
+        return
+
+    try:
+        resp = http_requests.post(
+            webhook_url,
+            json={'request_id': str(payment_request.request_id), 'item_updates': item_updates, 'overall_status': overall_status},
+            headers={'Content-Type': 'application/json'},
+            timeout=10,
+        )
+        logger.info(f"📤 Webhook → shopping app: HTTP {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not notify shopping app: {e}")
+    """
+    Send per-item status update to the shopping app via webhook.
+    Non-blocking — failure does NOT break the payment flow.
+
+    Payload shape:
+    {
+        "request_id": "uuid",
+        "item_updates": [
+            {"shopping_order_item_id": 42, "status": "paid",  "amount": "5000"},
+            {"shopping_order_item_id": 43, "status": "deposited", "amount": "3000"},
+        ],
+        "overall_status": "paid" | "deposited" | "partial" | "failed"
+    }
+    """
+    import requests as http_requests
+    import os
+
+    # Resolve webhook URL
+    try:
+        shopping_app_webhook = (
+            # getattr(payment_request.platform, 'callback_url', None)
+            # or (payment_request.metadata or {}).get('webhook_url')
+            os.getenv('SHOPPING_APP_WEBHOOK_URL',
+                         'http://localhost:8000/api/webhook/payment-status/')
+        )
+    except Exception:
+        shopping_app_webhook = 'http://localhost:8000/api/webhook/payment-status/'
+
+    # Build a lookup: PaymentRequestItem.item_id → item object (query once)
+    items_by_id = {item.item_id: item for item in payment_request.items.all()}
+
+    item_updates = []
+    for result in item_results:
+        item = items_by_id.get(result['item_id'])
+        if item is None:
+            continue
+
+        # Only include entries that have a linked shopping OrderItem
+        if not item.shopping_order_item_id:
+            logger.warning(
+                f"⚠️  PaymentRequestItem {item.item_id} has no shopping_order_item_id — "
+                f"skipping webhook update for this item"
+            )
+            continue
+
+        item_updates.append({
+            'shopping_order_item_id': item.shopping_order_item_id,
+            'status':  result['status'],
+            'amount':  result.get('amount', str(item.amount)),
+        })
+
+    if not item_updates:
+        logger.warning("⚠️  No items with shopping_order_item_id — skipping shopping app webhook")
+        return
+
+    payload = {
+        'request_id':     str(payment_request.request_id),
+        'item_updates':   item_updates,
+        'overall_status': overall_status,
+    }
+
+    try:
+        resp = http_requests.post(
+            shopping_app_webhook,
+            json=payload,
+            headers={'Content-Type': 'application/json'},
+            timeout=10,
+        )
+        logger.info(f"📤 Webhook → shopping app: HTTP {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"⚠️  Could not notify shopping app: {e}")
+
+
+
+
+        
