@@ -38,12 +38,14 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 
 # Content Security Policy
-CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:8000"]  # E-commerce domain
+CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:8000", 'http://localhost:1337']  # E-commerce domain
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",  # E-commerce app
     "http://127.0.0.1:8000",
+    'http://127.0.0.1:1337', 
+    'http://localhost:1337',
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -64,6 +66,8 @@ CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000',
                         'http://localhost:8000',
                         'http://127.0.0.1:8001', 
                         'http://localhost:8001',
+                        'http://127.0.0.1:1337', 
+                        'http://localhost:1337',
                         ]
 
 
@@ -87,6 +91,17 @@ SESSION_SAVE_EVERY_REQUEST = True  # Ensure session is saved
 
 SESSION_COOKIE_SAMESITE = 'Lax'  # Change from None to Lax
 SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+
+# ZKP / Strapi (same Strapi instance as shopping app)
+ZKP_STRAPI_URL       = os.getenv('ZKP_STRAPI_URL', 'http://localhost:1337')
+ZKP_STRAPI_API_TOKEN = os.getenv('ZKP_STRAPI_API_TOKEN', '')
+
+# Shopping app — used to pull seller KYC data for ZKP registration
+SHOPPING_APP_URL             = os.getenv('SHOPPING_APP_URL', 'http://localhost:8000')
+SHOPPING_APP_INTERNAL_SECRET = os.getenv('SHOPPING_APP_INTERNAL_SECRET', '')
+
+
+
 # Application definition
 
 INSTALLED_APPS = [

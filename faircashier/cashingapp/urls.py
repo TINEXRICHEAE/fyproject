@@ -7,6 +7,9 @@ from . import buyer_seller_views
 from . import admin_views
 from . import dispute_api_views
 from cashingapp.seller_proxy_urls import seller_proxy_urlpatterns
+from .urls_zkp import zkp_urlpatterns
+from .urls_balance_proof import balance_proof_urlpatterns
+
 
 urlpatterns = [
     # ============= HOME =============
@@ -54,15 +57,7 @@ urlpatterns = [
     path('payment/<uuid:request_id>/process-items/',
          buyer_seller_views.process_payment_items,
          name='process_payment_items'),
-    # NEW: buyer completes a pending deposit (transfers reserved funds to seller)
-    path('payment/<uuid:request_id>/complete-deposit/<int:item_id>/',
-         buyer_seller_views.complete_deposit_item,
-         name='complete_deposit_item'),
-
-    # NEW: buyer cancels a pending deposit (releases the reservation)
-    path('payment/<uuid:request_id>/cancel-deposit/<int:item_id>/',
-         buyer_seller_views.cancel_deposit_item,
-         name='cancel_deposit_item'),
+    
     path('payment/<uuid:request_id>/complete-deposit/shopping-item/<int:shopping_order_item_id>/',
          buyer_seller_views.complete_deposit_by_order_item,
          name='complete_deposit_by_order_item'),
@@ -112,4 +107,6 @@ urlpatterns = [
     
     # Transactions
     path('transactions/', admin_views.transactions_list, name='admin_transactions'),
-] + seller_proxy_urlpatterns
+
+    
+] + seller_proxy_urlpatterns + zkp_urlpatterns + balance_proof_urlpatterns

@@ -120,6 +120,34 @@ class Users(AbstractBaseUser, PermissionsMixin):
         blank=True,
         help_text="PIN locked until this timestamp"
     )
+    # ZKP verification fields (sellers only — buyers/admins ignore these)
+    zkp_verified = models.BooleanField(
+        default=False,
+        help_text="Whether this seller's KYC proof has been verified via ZKP"
+    )
+    zkp_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When ZKP verification was completed"
+    )
+    zkp_seller_id_hash = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Seller ID hash from ZKP verification public signal"
+    )
+    zkp_kyc_root = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Merkle root at time of verification"
+    )
+    zkp_commitment_hash = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text="Poseidon commitment hash from registration"
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     is_active = models.BooleanField(default=True)
@@ -607,3 +635,62 @@ class CashoutRequest(models.Model):
         if self.payment_method == 'bank_transfer':
             return f"{self.bank_name} - {self.account_number}"
         return self.phone_number or "N/A"
+
+
+
+
+
+class BalanceProof(models.Model):
+    
+
+    class TierResult(models.TextChoices):
+        GREEN   = 'green',   'Can pay all'
+        AMBER   = 'amber',   'Can pay some'
+        RED     = 'red',     'Cannot pay any'
+        UNKNOWN = 'unknown', 'Unknown'
+
+    id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order_id       = models.IntegerField(db_index=True)
+    seller_email   = models.EmailField(db_index=True)
+    buyer_email    = models.EmailField()   # never sent to shopping app
+    order_hash     = models.CharField(max_length=128)
+
+    proof          = models.JSONField(null=True, blank=True)
+    public_signals = models.JSONField(null=True, blank=True)
+    verified       = models.BooleanField(default=False)
+
+    tier_result    = models.CharField(
+        max_length=10,
+        choices=TierResult.choices,
+        default=TierResult.UNKNOWN,
+    )
+    items_payable  = models.IntegerField(default=0)
+    total_items    = models.IntegerField(default=0)
+    binary_bracket = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
+
+    generated_at   = models.DateTimeField(auto_now_add=True)
+    expires_at     = models.DateTimeField(null=True, blank=True)
+    refresh_count  = models.IntegerField(default=0)
+    include_cod    = models.BooleanField(default=False)
+
+    class Meta:
+        # Most recent proof per (order, seller) is what we serve
+        ordering = ['-generated_at']
+        indexes  = [
+            models.Index(fields=['order_id', 'seller_email', '-generated_at'],
+                         name='bp_order_seller_idx'),
+        ]
+
+    def __str__(self):
+        return (f"BalanceProof order={self.order_id} seller={self.seller_email} "
+                f"tier={self.tier_result} {self.items_payable}/{self.total_items}")
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        if not self.expires_at:
+            return True
+        return timezone.now() > self.expires_at
+
+
+

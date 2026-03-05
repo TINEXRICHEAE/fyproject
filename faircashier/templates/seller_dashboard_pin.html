@@ -16,7 +16,7 @@
     <!-- Email Display -->
     <div class="mb-6 border-2 border-white p-4">
         <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-1">Account</p>
-        <p class="text-sm font-black text-white">{{ email }}</p>
+        <p class="text-sm font-black text-white" id="seller-email">{{ email }}</p>
     </div>
 
     <!-- PIN Entry -->
@@ -49,14 +49,11 @@
     <div id="dashboardContent" class="hidden space-y-6">
         <!-- Stats Grid -->
         <div class="grid grid-cols-2 gap-4">
-            <!-- Balance -->
             <div class="border-2 border-white p-4">
                 <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Balance</p>
                 <p class="text-2xl font-black text-primary" id="balance">0.00</p>
                 <p class="text-xs font-bold text-white/70 uppercase mt-1" id="currency">UGX</p>
             </div>
-            
-            <!-- Total Sales -->
             <div class="border-2 border-primary bg-primary p-4">
                 <p class="text-xs font-black uppercase tracking-widest text-black/70 mb-2">Total Sales</p>
                 <p class="text-2xl font-black text-black" id="totalSales">0.00</p>
@@ -85,6 +82,143 @@
                 </div>
             </a>
         </div>
+
+        <!-- ══════════════════════════════════════════════════════════════
+             ZKP IDENTITY VERIFICATION SECTION
+             
+             NEW: Verification-only flow.
+             Registration happens on the Shopping App (which has KYC data).
+             Payment App only VERIFIES the proof — never sees raw KYC.
+             
+             States:
+               loading        → checking status
+               not-registered → seller hasn't registered on Shopping App yet
+               unverified     → registered on Shopping App, not yet verified here
+               verifying      → verification in progress
+               verified       → proof verified via Strapi
+               failed         → verification failed
+             ══════════════════════════════════════════════════════════════ -->
+        <div class="border-2 border-white" id="zkpSection">
+
+            <!-- Section header -->
+            <div class="bg-white p-3 border-b-2 border-black flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="material-symbols-outlined text-black text-sm">verified_user</span>
+                    <p class="text-xs font-black uppercase text-black">ZKP Identity Verification</p>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="zkpStatusDot" class="inline-block w-2 h-2 rounded-full bg-gray-400"></span>
+                    <span id="zkpStatusLabel" class="text-xs font-black uppercase text-black">Checking…</span>
+                </div>
+            </div>
+
+            <div id="zkpBody" class="p-4">
+
+                <!-- LOADING state -->
+                <div id="zkpStateLoading" class="text-center py-2">
+                    <p class="text-xs font-bold text-white/50 uppercase">Fetching verification status…</p>
+                </div>
+
+                <!-- NOT REGISTERED state (must register on Shopping App first) -->
+                <div id="zkpStateNotRegistered" class="hidden">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined text-white/30 text-2xl mt-0.5">block</span>
+                        <div>
+                            <p class="text-xs font-black uppercase text-white/50 mb-1">Not Registered</p>
+                            <p class="text-xs font-bold text-white/40 leading-relaxed">
+                                Your identity has not been registered in the verification system yet.
+                                Complete KYC approval and ZKP registration on the shopping platform first.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- UNVERIFIED state (registered on Shopping App, not yet verified here) -->
+                <div id="zkpStateUnverified" class="hidden space-y-4">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined text-white/60 text-2xl mt-0.5">lock_open</span>
+                        <div>
+                            <p class="text-xs font-black uppercase text-white mb-1">Registered — Not Yet Verified</p>
+                            <p class="text-xs font-bold text-white/60 leading-relaxed">
+                                Your identity is registered on the shopping platform.
+                                Verify it here to confirm your identity with the payment system
+                                — without sharing any personal data.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-white/20 pt-4">
+                        <button
+                            type="button"
+                            id="zkpVerifyBtn"
+                            onclick="triggerZkpVerification()"
+                            class="w-full border-2 border-primary text-primary py-3 text-xs font-black uppercase hover:bg-primary hover:text-black transition-colors"
+                        >
+                            <span class="material-symbols-outlined text-sm align-middle mr-1">fingerprint</span>
+                            Verify Identity
+                        </button>
+                        <div id="zkpVerifyError" class="hidden mt-3 border border-white/30 bg-white/10 p-2 text-xs font-black uppercase text-white text-center"></div>
+                    </div>
+                </div>
+
+                <!-- VERIFYING state -->
+                <div id="zkpStateVerifying" class="hidden text-center py-3">
+                    <span class="material-symbols-outlined text-primary animate-spin text-2xl">progress_activity</span>
+                    <p class="text-xs font-black uppercase text-white/70 mt-2">Verifying identity proof…</p>
+                    <p class="text-xs font-bold text-white/40 mt-1">Checking with the verification service</p>
+                </div>
+
+                <!-- VERIFIED state -->
+                <div id="zkpStateVerified" class="hidden space-y-3">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined text-primary text-2xl mt-0.5">verified</span>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-black uppercase text-primary mb-1">Identity Verified</p>
+                            <p class="text-xs font-bold text-white/60 leading-relaxed">
+                                Your identity is cryptographically verified. Buyers can confirm you
+                                are KYC-approved without accessing your personal data.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="border-t border-white/20 pt-3 space-y-1">
+                        <div class="flex justify-between items-center">
+                            <p class="text-xs font-black uppercase text-white/50">Commitment</p>
+                            <p class="text-xs font-black text-primary font-mono truncate ml-3 max-w-[160px]" id="zkpCommitmentHash">—</p>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <p class="text-xs font-black uppercase text-white/50">Merkle Root</p>
+                            <p class="text-xs font-black text-white font-mono truncate ml-3 max-w-[160px]" id="zkpKycRoot">—</p>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <p class="text-xs font-black uppercase text-white/50">Verified At</p>
+                            <p class="text-xs font-black text-white" id="zkpVerifiedAt">—</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FAILED state -->
+                <div id="zkpStateFailed" class="hidden">
+                    <div class="flex items-start gap-3">
+                        <span class="material-symbols-outlined text-white text-2xl mt-0.5">error</span>
+                        <div class="flex-1">
+                            <p class="text-xs font-black uppercase text-white mb-1">Verification Failed</p>
+                            <p class="text-xs font-bold text-white/60 leading-relaxed" id="zkpFailedReason">
+                                The verification could not be completed.
+                            </p>
+                            <button
+                                type="button"
+                                onclick="triggerZkpVerification()"
+                                class="mt-3 border border-white/40 text-white/70 px-3 py-1.5 text-xs font-black uppercase hover:border-white hover:text-white transition-colors"
+                            >
+                                Retry Verification
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+            </div><!-- /zkpBody -->
+        </div>
+        <!-- ═══════════════════════════════════════════════════════════ -->
 
         <!-- Recent Sales -->
         <div class="border-2 border-white">
@@ -116,64 +250,54 @@
 
 {% block scripts %}
 <script>
-// PIN input auto-focus (same as buyer dashboard)
+// ═══════════════════════════════════════════════════════════════════
+// PIN INPUT  (original — unchanged)
+// ═══════════════════════════════════════════════════════════════════
 document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
-    input.addEventListener('input', function(e) {
-        if (this.value && index < inputs.length - 1) {
-            inputs[index + 1].focus();
-        }
-        if (index === 3 && this.value) {
-            document.getElementById('dashboardForm').dispatchEvent(new Event('submit'));
-        }
+    input.addEventListener('input', function() {
+        if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
+        if (index === 3 && this.value) document.getElementById('dashboardForm').dispatchEvent(new Event('submit'));
     });
-    
     input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !this.value && index > 0) {
-            inputs[index - 1].focus();
-        }
+        if (e.key === 'Backspace' && !this.value && index > 0) inputs[index - 1].focus();
     });
 });
-
 document.getElementById('pin1').focus();
+
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD FORM SUBMIT  (original — unchanged except ZKP call)
+// ═══════════════════════════════════════════════════════════════════
+const SELLER_EMAIL = '{{ email }}';
 
 document.getElementById('dashboardForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     
-    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
-        .map(id => document.getElementById(id).value)
-        .join('');
-    
-    if (pin.length !== 4) {
-        showError('Enter complete PIN');
-        return;
-    }
-    
+    const pin = ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id).value).join('');
+    if (pin.length !== 4) { showError('Enter complete PIN'); return; }
     document.getElementById('pin').value = pin;
     
-    const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Loading...';
+    // Store PIN for ZKP verification use later
+    window._sellerPin = pin;
     
-    const formData = new FormData(this);
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled  = true;
+    submitBtn.textContent = 'Loading...';
     
     try {
         const response = await fetch(window.location.pathname, {
             method: 'POST',
-            body: formData
+            body:   new FormData(this)
         });
-        
         const data = await response.json();
         
         if (response.ok && data.success) {
-            // Display stats
-            document.getElementById('balance').textContent = parseFloat(data.wallet.balance).toLocaleString();
-            document.getElementById('currency').textContent = data.wallet.currency;
+            document.getElementById('balance').textContent   = parseFloat(data.wallet.balance).toLocaleString();
+            document.getElementById('currency').textContent  = data.wallet.currency;
             document.getElementById('totalSales').textContent = parseFloat(data.total_sales).toLocaleString();
             
-            // Display transactions
             const txDiv = document.getElementById('transactions');
-            if (data.transactions && data.transactions.length > 0) {
-                txDiv.innerHTML = data.transactions.map(tx => `
+            txDiv.innerHTML = data.transactions?.length > 0
+                ? data.transactions.map(tx => `
                     <div class="p-4 hover:bg-white hover:text-black transition-colors">
                         <div class="flex justify-between items-center">
                             <div>
@@ -182,16 +306,12 @@ document.getElementById('dashboardForm').addEventListener('submit', async functi
                             </div>
                             <p class="text-sm font-black text-primary">+${parseFloat(tx.amount).toLocaleString()}</p>
                         </div>
-                    </div>
-                `).join('');
-            } else {
-                txDiv.innerHTML = '<p class="p-4 text-xs font-bold text-white/70 text-center">No sales yet</p>';
-            }
+                    </div>`).join('')
+                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No sales yet</p>';
             
-            // Display items
             const itemsDiv = document.getElementById('items');
-            if (data.items && data.items.length > 0) {
-                itemsDiv.innerHTML = data.items.map(item => `
+            itemsDiv.innerHTML = data.items?.length > 0
+                ? data.items.map(item => `
                     <div class="p-4 hover:bg-white hover:text-black transition-colors">
                         <div class="flex justify-between items-center">
                             <div class="flex-1">
@@ -200,31 +320,144 @@ document.getElementById('dashboardForm').addEventListener('submit', async functi
                             </div>
                             <p class="text-sm font-black text-primary">${parseFloat(item.amount).toLocaleString()}</p>
                         </div>
-                    </div>
-                `).join('');
-            } else {
-                itemsDiv.innerHTML = '<p class="p-4 text-xs font-bold text-white/70 text-center">No items yet</p>';
-            }
+                    </div>`).join('')
+                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No items yet</p>';
             
-            // Show dashboard
             document.getElementById('dashboardContent').classList.remove('hidden');
             this.classList.add('hidden');
+
+            // Load ZKP verification status
+            loadZkpStatus();
+
         } else {
             showError(data.error || 'Invalid PIN');
-            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
-                document.getElementById(id).value = '';
-            });
+            ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
             document.getElementById('pin1').focus();
-            submitBtn.disabled = false;
+            submitBtn.disabled   = false;
             submitBtn.textContent = 'View Dashboard';
         }
-    } catch (error) {
+    } catch {
         showError('Network error');
-        submitBtn.disabled = false;
+        submitBtn.disabled   = false;
         submitBtn.textContent = 'View Dashboard';
     }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+// ZKP VERIFICATION — load status + trigger verify
+//
+// NEW FLOW:
+//   1. GET /seller/zkp-verify/?email=X  → check verification status
+//   2. If unverified → seller clicks "Verify Identity"
+//   3. POST /seller/zkp-verify/ {email, pin}
+//      → Payment App fetches proof from Shopping App
+//      → Payment App verifies via Strapi /verify-kyc-proof
+//      → Stores result, returns success/fail
+// ═══════════════════════════════════════════════════════════════════
+
+function showZkpState(state) {
+    ['Loading', 'NotRegistered', 'Unverified', 'Verifying', 'Verified', 'Failed']
+        .forEach(s => {
+            const el = document.getElementById('zkpState' + s);
+            if (el) el.classList.add('hidden');
+        });
+    const target = document.getElementById('zkpState' + state);
+    if (target) target.classList.remove('hidden');
+}
+
+function setDot(color, text) {
+    document.getElementById('zkpStatusDot').style.background = color;
+    document.getElementById('zkpStatusLabel').textContent = text;
+}
+
+async function loadZkpStatus() {
+    try {
+        const r = await fetch(`/seller/zkp-verify/?email=${encodeURIComponent(SELLER_EMAIL)}`);
+        const data = await r.json();
+        applyZkpState(data);
+    } catch {
+        setDot('#4b5563', 'Unavailable');
+        showZkpState('NotRegistered');
+    }
+}
+
+function applyZkpState(data) {
+    if (data.zkp_verified) {
+        // Already verified on this (Payment) app
+        setDot('#00FF00', 'Verified');
+        document.getElementById('zkpCommitmentHash').textContent =
+            data.commitment_hash ? data.commitment_hash.slice(0, 20) + '…' : '—';
+        document.getElementById('zkpKycRoot').textContent =
+            data.kyc_root ? data.kyc_root.slice(0, 20) + '…' : '—';
+        document.getElementById('zkpVerifiedAt').textContent =
+            data.zkp_verified_at ? new Date(data.zkp_verified_at).toLocaleString() : '—';
+        showZkpState('Verified');
+    } else if (data.commitment_hash) {
+        // Registered on Shopping App, not yet verified on Payment App
+        setDot('#f59e0b', 'Unverified');
+        showZkpState('Unverified');
+    } else {
+        // Not registered at all (Shopping App hasn't registered this seller)
+        setDot('#4b5563', 'Not Registered');
+        showZkpState('NotRegistered');
+    }
+}
+
+async function triggerZkpVerification() {
+    const pin = window._sellerPin || '';
+    if (!pin) {
+        showZkpError('Session expired. Please re-enter your PIN by refreshing the page.');
+        return;
+    }
+
+    showZkpState('Verifying');
+    setDot('#f59e0b', 'Verifying…');
+
+    try {
+        const resp = await fetch('/seller/zkp-verify/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: SELLER_EMAIL, pin: pin }),
+        });
+        const data = await resp.json();
+
+        if (resp.ok && data.zkp_verified) {
+            setDot('#00FF00', 'Verified');
+            document.getElementById('zkpCommitmentHash').textContent =
+                data.commitment_hash ? data.commitment_hash.slice(0, 20) + '…' : '—';
+            document.getElementById('zkpKycRoot').textContent =
+                data.kyc_root ? data.kyc_root.slice(0, 20) + '…' : '—';
+            document.getElementById('zkpVerifiedAt').textContent =
+                data.verified_at ? new Date(data.verified_at).toLocaleString() : 'Just now';
+            showZkpState('Verified');
+        } else if (resp.status === 404) {
+            // Not registered on Shopping App
+            setDot('#4b5563', 'Not Registered');
+            showZkpState('NotRegistered');
+        } else {
+            setDot('#ef4444', 'Failed');
+            document.getElementById('zkpFailedReason').textContent =
+                data.error || data.detail || 'Verification failed. Please try again.';
+            showZkpState('Failed');
+        }
+    } catch {
+        setDot('#ef4444', 'Failed');
+        document.getElementById('zkpFailedReason').textContent =
+            'Network error. Please check your connection and try again.';
+        showZkpState('Failed');
+    }
+}
+
+function showZkpError(msg) {
+    const el = document.getElementById('zkpVerifyError');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 6000);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// HELPERS  (original — unchanged)
+// ═══════════════════════════════════════════════════════════════════
 function showError(message) {
     const errorMsg = document.getElementById('errorMsg');
     errorMsg.textContent = message;

@@ -10,13 +10,14 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
-from .models import Users, Platform
+from .models import Users, Platform, Wallet
+from django.views.decorators.http import require_GET
 import hashlib
 import time
 import logging
 
 logger = logging.getLogger(__name__)
-
+  
 
 # ============= HELPER FUNCTIONS =============
 
@@ -220,3 +221,6 @@ def seller_dashboard_iframe(request):
     }
     
     return render(request, 'seller_dashboard_pin.html', context)
+
+
+
