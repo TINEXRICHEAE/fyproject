@@ -1,14 +1,14 @@
 """
-Payment App — views_zkp.py
+Payment App — views_zkp.py (FIXED)
 
-Verification-only. Registration is now Shopping App's job.
+Verification-only. Registration is Shopping App's job.
 
-Flow:
-  1. Seller dashboard calls GET /seller/zkp-verify/?email=X → status
-  2. Seller clicks Verify → POST /seller/zkp-verify/ {email, pin}
-  3. Payment App fetches proof from Shopping App (no raw KYC)
-  4. Payment App verifies via Strapi /verify-kyc-proof
-  5. Stores verification result on User model
+FIX: _verify_seller() now accepts EITHER:
+  a) PIN auth: POST {email, pin}
+  b) Session auth: POST {email} when seller_dashboard_auth_{email} is in session
+
+This fixes "Session expired" when seller accesses dashboard via iframe
+(session-authenticated flow where PIN was already verified on redirect).
 """
 
 import json
@@ -44,10 +44,9 @@ def _get_verification_status(request):
     except Users.DoesNotExist:
         return JsonResponse({'error': 'Seller not found'}, status=404)
 
-    # Also try to check if Shopping App has a proof (so we can show "unverified" vs "not registered")
+    # Check if Shopping App has registered this seller (for unverified vs not-registered)
     commitment_hash = getattr(user, 'zkp_commitment_hash', '') or ''
     if not commitment_hash:
-        # Try fetching from Shopping App to see if seller is registered there
         try:
             client = ZKPClient()
             proof_data = client.fetch_seller_proof_from_shopping_app(email)
@@ -59,7 +58,10 @@ def _get_verification_status(request):
     return JsonResponse({
         'email': email,
         'zkp_verified': getattr(user, 'zkp_verified', False),
-        'zkp_verified_at': getattr(user, 'zkp_verified_at', None) and user.zkp_verified_at.isoformat(),
+        'zkp_verified_at': (
+            user.zkp_verified_at.isoformat()
+            if getattr(user, 'zkp_verified_at', None) else None
+        ),
         'seller_id_hash': getattr(user, 'zkp_seller_id_hash', ''),
         'kyc_root': getattr(user, 'zkp_kyc_root', ''),
         'commitment_hash': commitment_hash,
@@ -67,6 +69,14 @@ def _get_verification_status(request):
 
 
 def _verify_seller(request):
+    """
+    Verify a seller's KYC proof via Strapi.
+    
+    Accepts TWO auth modes:
+      1. PIN auth:     POST {email, pin}
+      2. Session auth: POST {email} — when seller_dashboard_auth_{email} is in session
+                       (set by seller_proxy_views.py after PIN login + redirect)
+    """
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
@@ -74,22 +84,40 @@ def _verify_seller(request):
 
     email = body.get('email', '').strip().lower()
     pin = body.get('pin', '').strip()
-    if not email or not pin:
-        return JsonResponse({'error': 'Email and PIN required'}, status=400)
+    if not email:
+        return JsonResponse({'error': 'Email is required'}, status=400)
 
     try:
         user = Users.objects.get(email=email, role='seller')
     except Users.DoesNotExist:
         return JsonResponse({'error': 'Seller not found'}, status=404)
 
-    pin_result = PINAuthenticator.verify_pin(user, pin)
-    if not pin_result['valid']:
+    # ── Auth: try PIN first, then fall back to session ────────────────
+    authenticated = False
+
+    if pin:
+        # Mode 1: PIN auth
+        pin_result = PINAuthenticator.verify_pin(user, pin)
+        if not pin_result['valid']:
+            return JsonResponse({
+                'error': pin_result.get('error', 'Invalid PIN'),
+                'attempts_remaining': pin_result.get('attempts_remaining'),
+            }, status=401)
+        authenticated = True
+
+    if not authenticated:
+        # Mode 2: Session auth (set by seller_dashboard_iframe POST handler)
+        session_key = f'seller_dashboard_auth_{email}'
+        if request.session.get(session_key):
+            authenticated = True
+            logger.debug(f"ZKP verify: session auth OK for {email}")
+
+    if not authenticated:
         return JsonResponse({
-            'error': pin_result.get('error', 'Invalid PIN'),
-            'attempts_remaining': pin_result.get('attempts_remaining'),
+            'error': 'Authentication required. Enter PIN or refresh the page.',
         }, status=401)
 
-    # Fetch proof from Shopping App
+    # ── Fetch proof from Shopping App ─────────────────────────────────
     client = ZKPClient()
     proof_data = client.fetch_seller_proof_from_shopping_app(email)
 
@@ -109,21 +137,31 @@ def _verify_seller(request):
     proof = proof_data.get('proof')
     public_signals = proof_data.get('public_signals')
     if not proof or not public_signals:
-        return JsonResponse({'error': 'Incomplete proof data', 'zkp_verified': False}, status=400)
+        return JsonResponse({
+            'error': 'Incomplete proof data',
+            'zkp_verified': False,
+        }, status=400)
 
-    # Verify via Strapi
+    # ── Verify via Strapi ─────────────────────────────────────────────
     try:
         verification = client.verify_kyc_proof(proof, public_signals)
     except Exception as e:
         logger.error(f"Strapi verification failed for {email}: {e}")
-        return JsonResponse({'error': 'Verification service unavailable', 'zkp_verified': False}, status=503)
+        return JsonResponse({
+            'error': 'Verification service unavailable',
+            'zkp_verified': False,
+        }, status=503)
 
-    is_valid = verification.get('valid', False)
+    # Strapi kycVerifyProof returns:
+    #   { verified: bool, publicSignals: {kyc_root, seller_id_hash, current_year}, meta: {verified_at, ...} }
+    is_valid = verification.get('verified', False)
+    pub = verification.get('publicSignals', {})
+    meta = verification.get('meta', {})
 
-    # Store result
+    # ── Store result ──────────────────────────────────────────────────
     user.zkp_verified = is_valid
-    user.zkp_seller_id_hash = verification.get('seller_id_hash', '')
-    user.zkp_kyc_root = verification.get('kyc_root', '')
+    user.zkp_seller_id_hash = pub.get('seller_id_hash', '')
+    user.zkp_kyc_root = pub.get('kyc_root', '')
     user.zkp_commitment_hash = proof_data.get('commitment_hash', '')
     if is_valid:
         user.zkp_verified_at = timezone.now()
@@ -135,16 +173,16 @@ def _verify_seller(request):
     logger.info(f"Seller ZKP verification {'OK' if is_valid else 'FAILED'} for {email}")
 
     return JsonResponse({
-        'success': is_valid, 'zkp_verified': is_valid,
-        'seller_id_hash': verification.get('seller_id_hash', ''),
-        'kyc_root': verification.get('kyc_root', ''),
+        'success': is_valid,
+        'zkp_verified': is_valid,
+        'seller_id_hash': pub.get('seller_id_hash', ''),
+        'kyc_root': pub.get('kyc_root', ''),
         'commitment_hash': proof_data.get('commitment_hash', ''),
-        'verified_at': verification.get('verified_at', ''),
-        'message': verification.get('message', ''),
+        'verified_at': meta.get('verified_at', ''),
     })
 
 
-# ── Internal API ──
+# ── Internal API ──────────────────────────────────────────────────────
 
 @csrf_exempt
 @require_http_methods(["GET"])
@@ -158,13 +196,69 @@ def internal_seller_zkp_status(request, seller_email):
     try:
         user = Users.objects.get(email=email, role='seller')
     except Users.DoesNotExist:
-        return JsonResponse({'email': email, 'zkp_verified': False, 'error': 'Not found'}, status=404)
+        return JsonResponse({
+            'email': email, 'zkp_verified': False, 'error': 'Not found',
+        }, status=404)
 
     return JsonResponse({
         'email': email,
         'zkp_verified': getattr(user, 'zkp_verified', False),
-        'zkp_verified_at': user.zkp_verified_at.isoformat() if getattr(user, 'zkp_verified_at', None) else None,
+        'zkp_verified_at': (
+            user.zkp_verified_at.isoformat()
+            if getattr(user, 'zkp_verified_at', None) else None
+        ),
         'seller_id_hash': getattr(user, 'zkp_seller_id_hash', ''),
         'kyc_root': getattr(user, 'zkp_kyc_root', ''),
         'commitment_hash': getattr(user, 'zkp_commitment_hash', ''),
+    })
+
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Internal API — Shopping App fetches seller's actual verification status
+# ─────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def api_internal_seller_zkp_status(request, seller_email):
+    """
+    Shopping App calls this to get the ground-truth verification status
+    from the Payment App's User model.
+    
+    GET /api/internal/seller-zkp-status/<email>/
+    Headers: X-Internal-Secret
+    
+    Returns the ACTUAL verification fields stored on User after
+    Payment App verified the proof via Strapi /verify-kyc-proof.
+    
+    Shopping App compares commitment_hash from this response with its own
+    SellerVerification.zkp_commitment_hash to confirm consistency.
+    """
+    secret = request.headers.get('X-Internal-Secret', '')
+    if secret != settings.SHOPPING_APP_INTERNAL_SECRET:
+        return JsonResponse({'error': 'Unauthorized'}, status=403)
+
+    email = seller_email.strip().lower()
+    try:
+        user = Users.objects.get(email=email, role='seller')
+    except Users.DoesNotExist:
+        return JsonResponse({
+            'email': email,
+            'zkp_verified': False,
+            'exists_in_payment_app': False,
+            'error': 'Seller not found in payment system',
+        }, status=404)
+
+    return JsonResponse({
+        'email': email,
+        'exists_in_payment_app': True,
+        # Ground-truth verification fields from User model
+        'zkp_verified': getattr(user, 'zkp_verified', False),
+        'zkp_verified_at': (
+            user.zkp_verified_at.isoformat()
+            if getattr(user, 'zkp_verified_at', None) else None
+        ),
+        'zkp_seller_id_hash': getattr(user, 'zkp_seller_id_hash', ''),
+        'zkp_kyc_root': getattr(user, 'zkp_kyc_root', ''),
+        'zkp_commitment_hash': getattr(user, 'zkp_commitment_hash', ''),
     })

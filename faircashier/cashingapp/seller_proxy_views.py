@@ -10,10 +10,12 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from django.http import JsonResponse
 from django.conf import settings
 from django.utils import timezone
+from django.db import transaction as db_transaction
 from .models import Users, Platform, Wallet
 from django.views.decorators.http import require_GET
 import hashlib
 import time
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -89,64 +91,126 @@ def verify_seller_access_token(platform_api_key, seller_email, token_string, max
 @xframe_options_exempt
 def seller_dashboard_iframe(request):
     """
-    Seller dashboard accessible via iframe from e-commerce platform
-    
-    GET: Verify platform token → Show PIN entry form
-    POST: Verify PIN → Return dashboard data (wallet, transactions, items)
+    Seller dashboard accessible via iframe from e-commerce platform.
+
+    Flow:
+      GET (with platform params)  : Verify token → render pin_login.html or pin_setup.html
+      POST (PIN auth or setup)    : Verify/create PIN → set session → redirect to dashboard
+      GET (session-authenticated) : Load data → render authenticated dashboard
     """
-    
-    # ============= HANDLE POST (PIN VERIFICATION + DATA) =============
+
+    seller_email = request.GET.get('email', '').strip()
+
+    # ============= HANDLE POST (PIN LOGIN OR ACCOUNT SETUP) =============
     if request.method == 'POST':
-        email = request.POST.get('email')
-        pin = request.POST.get('pin')
-        
-        if not email or not pin:
-            return JsonResponse({'error': 'Email and PIN required'}, status=400)
-        
-        # Verify seller exists
-        try:
-            seller = Users.objects.get(email=email, role='seller')
-        except Users.DoesNotExist:
-            return JsonResponse({'error': 'Seller not found'}, status=404)
-        
-        # Verify PIN
         from .pin_auth import PINAuthenticator
         from .models import Transaction, PaymentRequestItem
         from django.db.models import Q, Sum
         from decimal import Decimal
-        
-        pin_result = PINAuthenticator.verify_pin(seller, pin)
-        
-        if not pin_result['valid']:
-            response_data = {'error': pin_result['error']}
-            if pin_result['attempts_remaining'] is not None:
-                response_data['attempts_remaining'] = pin_result['attempts_remaining']
-            return JsonResponse(response_data, status=401)
-        
-        # Get wallet and data
+
+        email = request.POST.get('email', '').strip()
+        pin = request.POST.get('pin', '')
+        confirm_pin = request.POST.get('confirm_pin', '')
+
+        if not email or not pin:
+            return JsonResponse({'error': 'Email and PIN required'}, status=400)
+
+        is_setup = bool(confirm_pin)  # pin_setup.html always sends confirm_pin
+
+        if is_setup:
+            # ---- New seller account creation ----
+            if Users.objects.filter(email=email).exists():
+                return JsonResponse({'error': 'Account exists. Use PIN login.'}, status=400)
+
+            phone_number = request.POST.get('phone_number', '')
+
+            try:
+                with db_transaction.atomic():
+                    user = Users.objects.create(
+                        email=email,
+                        role='seller',          # always seller via this endpoint
+                        phone_number=phone_number,
+                        is_active=True,
+                        is_staff=False,
+                        is_superuser=False,
+                    )
+                    user.set_unusable_password()
+                    user.save()
+
+                    result = PINAuthenticator.set_pin(user, pin, confirm_pin)
+                    if not result['success']:
+                        user.delete()
+                        return JsonResponse({'error': result['error']}, status=400)
+
+                    Wallet.objects.create(user=user)
+                    logger.info(f"✅ Seller account created via dashboard iframe: {email}")
+
+            except Exception as e:
+                logger.error(f"❌ Seller setup error: {str(e)}")
+                return JsonResponse({'error': 'Registration failed'}, status=500)
+
+        else:
+            # ---- Existing seller PIN login ----
+            try:
+                seller = Users.objects.get(email=email, role='seller')
+            except Users.DoesNotExist:
+                return JsonResponse({'error': 'Seller not found'}, status=404)
+
+            result = PINAuthenticator.verify_pin(seller, pin)
+            if not result['valid']:
+                response_data = {'error': result['error']}
+                if result['attempts_remaining'] is not None:
+                    response_data['attempts_remaining'] = result['attempts_remaining']
+                return JsonResponse(response_data, status=401)
+
+        # Auth successful — mark session and redirect to dashboard
+        request.session[f'seller_dashboard_auth_{email}'] = True
+        logger.info(f"✅ Seller dashboard session set for: {email}")
+
+        return JsonResponse({
+            'success': True,
+            'redirect_url': f'/payment/seller-dashboard/?email={email}',
+        })
+
+    # ============= HANDLE GET =============
+    if not seller_email:
+        return render(request, 'error.html', {'message': 'Missing email parameter'})
+
+    # ---- Session-authenticated dashboard ----
+    if request.session.get(f'seller_dashboard_auth_{seller_email}'):
+        try:
+            seller = Users.objects.get(email=seller_email, role='seller')
+        except Users.DoesNotExist:
+            del request.session[f'seller_dashboard_auth_{seller_email}']
+            return render(request, 'error.html', {'message': 'Seller account not found'})
+
+        from .models import Transaction, PaymentRequestItem
+        from django.db.models import Q, Sum
+        from decimal import Decimal
+
         wallet = seller.wallet
-        
+
         transactions = Transaction.objects.filter(
             Q(from_wallet=wallet) | Q(to_wallet=wallet)
         ).order_by('-created_at')[:10]
-        
+
         items = PaymentRequestItem.objects.filter(
-            seller_email=email
+            seller_email=seller_email
         ).select_related('payment_request').order_by('-created_at')[:10]
-        
+
         total_sales = Transaction.objects.filter(
             to_wallet=wallet,
             transaction_type='transfer',
-            status='completed'
+            status='completed',
         ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
-        
-        logger.info(f"✅ Seller dashboard data retrieved for {email}")
-        
-        return JsonResponse({
-            'success': True,
+
+        platform_id   = request.session.get(f'seller_platform_id_{seller_email}', '')
+        platform_name = request.session.get(f'seller_platform_name_{seller_email}', '')
+
+        initial_data = json.dumps({
             'wallet': {
                 'balance': str(wallet.balance),
-                'currency': wallet.currency
+                'currency': wallet.currency,
             },
             'total_sales': str(total_sales),
             'transactions': [
@@ -155,7 +219,7 @@ def seller_dashboard_iframe(request):
                     'type': tx.transaction_type,
                     'amount': str(tx.amount),
                     'status': tx.status,
-                    'created_at': tx.created_at.isoformat()
+                    'created_at': tx.created_at.isoformat(),
                 }
                 for tx in transactions
             ],
@@ -164,63 +228,70 @@ def seller_dashboard_iframe(request):
                     'id': item.item_id,
                     'amount': str(item.amount),
                     'description': item.product_description or 'Item',
-                    'created_at': item.created_at.isoformat()
+                    'created_at': item.created_at.isoformat(),
                 }
                 for item in items
-            ]
+            ],
         })
-    
-    # ============= HANDLE GET (VERIFY TOKEN + SHOW PIN FORM) =============
-    seller_email = request.GET.get('email', '').strip()
-    platform_key = request.GET.get('platform_key', '').strip()
-    access_token = request.GET.get('token', '').strip()
-    
+
+        logger.info(f"✅ Serving authenticated seller dashboard for: {seller_email}")
+
+        return render(request, 'seller_dashboard_pin.html', {
+            'email': seller_email,
+            'platform_name': platform_name,
+            'platform_id': platform_id,
+            'pin_verified': True,
+            'initial_data_json': initial_data,
+        })
+
+    # ---- Initial access — verify platform token ----
+    platform_key  = request.GET.get('platform_key', '').strip()
+    access_token  = request.GET.get('token', '').strip()
+
     logger.info(f"📥 Seller dashboard access: {seller_email}")
-    
-    if not all([seller_email, platform_key, access_token]):
-        logger.warning("⚠️ Missing required parameters for seller dashboard access")
-        return render(request, 'error.html', {
-            'message': 'Missing required access parameters'
-        })
-    
-    # Verify platform
+
+    if not all([platform_key, access_token]):
+        logger.warning("⚠️ Missing platform params and no active session")
+        return render(request, 'error.html', {'message': 'Missing required access parameters'})
+
     try:
         platform = Platform.objects.get(api_key=platform_key, is_active=True)
         logger.info(f"✅ Platform verified: {platform.platform_name}")
     except Platform.DoesNotExist:
         logger.error(f"❌ Invalid platform key: {platform_key}")
-        return render(request, 'error.html', {
-            'message': 'Invalid platform credentials'
-        })
-    
-    # Verify access token
+        return render(request, 'error.html', {'message': 'Invalid platform credentials'})
+
     token_result = verify_seller_access_token(platform_key, seller_email, access_token)
-    
     if not token_result['valid']:
         logger.warning(f"⚠️ Invalid token for {seller_email}: {token_result['error']}")
-        return render(request, 'error.html', {
-            'message': f'Access denied: {token_result["error"]}'
-        })
-    
+        return render(request, 'error.html', {'message': f'Access denied: {token_result["error"]}'})
+
     logger.info(f"✅ Access token verified for {seller_email}")
-    
-    # Check if seller exists
+
+    # Cache platform info so it survives the PIN redirect
+    request.session[f'seller_platform_id_{seller_email}']   = str(platform.platform_id)
+    request.session[f'seller_platform_name_{seller_email}'] = platform.platform_name
+
+    # Check if seller already has an account
     try:
-        seller = Users.objects.get(email=seller_email, role='seller')
+        Users.objects.get(email=seller_email, role='seller')
         has_account = True
-        logger.info(f"✅ Existing seller found: {seller_email}")
+        logger.info(f"✅ Existing seller: {seller_email} — showing PIN login")
     except Users.DoesNotExist:
         has_account = False
-        logger.info(f"🆕 New seller from {platform.platform_name}: {seller_email}")
-    
-    context = {
-        'email': seller_email,
-        'platform_name': platform.platform_name,
-        'platform_id': platform.platform_id,
-        'has_account': has_account,
-    }
-    
-    return render(request, 'seller_dashboard_pin.html', context)
+        logger.info(f"🆕 New seller from {platform.platform_name}: {seller_email} — showing PIN setup")
+
+    if has_account:
+        return render(request, 'pin_login.html', {
+            'prefill_email': seller_email,
+            'return_url': '',
+        })
+    else:
+        return render(request, 'pin_setup.html', {
+            'prefill_email': seller_email,
+            'prefill_role': 'seller',
+            'return_url': '',
+        })
 
 
 

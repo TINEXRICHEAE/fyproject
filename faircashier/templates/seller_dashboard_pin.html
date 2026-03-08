@@ -19,10 +19,11 @@
         <p class="text-sm font-black text-white" id="seller-email">{{ email }}</p>
     </div>
 
+    {% if not pin_verified %}
     <!-- PIN Entry -->
     <form id="dashboardForm" class="space-y-6 mb-8">
         <input type="hidden" name="email" value="{{ email }}"/>
-        
+
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
                 Enter PIN
@@ -36,17 +37,18 @@
             <input type="hidden" id="pin" name="pin"/>
         </div>
 
-        <button 
-            type="submit" 
+        <button
+            type="submit"
             id="submitBtn"
             class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
         >
             View Dashboard
         </button>
     </form>
+    {% endif %}
 
-    <!-- Dashboard Content (Hidden Initially) -->
-    <div id="dashboardContent" class="hidden space-y-6">
+    <!-- Dashboard Content -->
+    <div id="dashboardContent" class="{% if not pin_verified %}hidden {% endif %}space-y-6">
         <!-- Stats Grid -->
         <div class="grid grid-cols-2 gap-4">
             <div class="border-2 border-white p-4">
@@ -85,11 +87,11 @@
 
         <!-- ══════════════════════════════════════════════════════════════
              ZKP IDENTITY VERIFICATION SECTION
-             
+
              NEW: Verification-only flow.
              Registration happens on the Shopping App (which has KYC data).
              Payment App only VERIFIES the proof — never sees raw KYC.
-             
+
              States:
                loading        → checking status
                not-registered → seller hasn't registered on Shopping App yet
@@ -250,9 +252,12 @@
 
 {% block scripts %}
 <script>
+const SELLER_EMAIL = '{{ email }}';
+
 // ═══════════════════════════════════════════════════════════════════
-// PIN INPUT  (original — unchanged)
+// PIN INPUT
 // ═══════════════════════════════════════════════════════════════════
+{% if not pin_verified %}
 document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
     input.addEventListener('input', function() {
         if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
@@ -265,96 +270,49 @@ document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
 document.getElementById('pin1').focus();
 
 // ═══════════════════════════════════════════════════════════════════
-// DASHBOARD FORM SUBMIT  (original — unchanged except ZKP call)
+// DASHBOARD FORM SUBMIT
 // ═══════════════════════════════════════════════════════════════════
-const SELLER_EMAIL = '{{ email }}';
-
 document.getElementById('dashboardForm').addEventListener('submit', async function(e) {
     e.preventDefault();
-    
+
     const pin = ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id).value).join('');
     if (pin.length !== 4) { showError('Enter complete PIN'); return; }
     document.getElementById('pin').value = pin;
-    
-    // Store PIN for ZKP verification use later
-    window._sellerPin = pin;
-    
+
+    // Store PIN in sessionStorage so it survives the redirect
+    sessionStorage.setItem('_sellerPin', pin);
+
     const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled  = true;
+    submitBtn.disabled    = true;
     submitBtn.textContent = 'Loading...';
-    
+
     try {
-        const response = await fetch(window.location.pathname, {
+        const response = await fetch(window.location.pathname + window.location.search, {
             method: 'POST',
             body:   new FormData(this)
         });
         const data = await response.json();
-        
+
         if (response.ok && data.success) {
-            document.getElementById('balance').textContent   = parseFloat(data.wallet.balance).toLocaleString();
-            document.getElementById('currency').textContent  = data.wallet.currency;
-            document.getElementById('totalSales').textContent = parseFloat(data.total_sales).toLocaleString();
-            
-            const txDiv = document.getElementById('transactions');
-            txDiv.innerHTML = data.transactions?.length > 0
-                ? data.transactions.map(tx => `
-                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
-                        <div class="flex justify-between items-center">
-                            <div>
-                                <p class="text-xs font-black uppercase text-primary">Sale</p>
-                                <p class="text-xs font-bold text-white/50 mt-1">${new Date(tx.created_at).toLocaleDateString()}</p>
-                            </div>
-                            <p class="text-sm font-black text-primary">+${parseFloat(tx.amount).toLocaleString()}</p>
-                        </div>
-                    </div>`).join('')
-                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No sales yet</p>';
-            
-            const itemsDiv = document.getElementById('items');
-            itemsDiv.innerHTML = data.items?.length > 0
-                ? data.items.map(item => `
-                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
-                        <div class="flex justify-between items-center">
-                            <div class="flex-1">
-                                <p class="text-xs font-black uppercase">${item.description || 'Item'}</p>
-                                <p class="text-xs font-bold text-white/50 mt-1">ID: ${item.id}</p>
-                            </div>
-                            <p class="text-sm font-black text-primary">${parseFloat(item.amount).toLocaleString()}</p>
-                        </div>
-                    </div>`).join('')
-                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No items yet</p>';
-            
-            document.getElementById('dashboardContent').classList.remove('hidden');
-            this.classList.add('hidden');
-
-            // Load ZKP verification status
-            loadZkpStatus();
-
+            window.location.href = data.redirect_url;
         } else {
             showError(data.error || 'Invalid PIN');
             ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
             document.getElementById('pin1').focus();
-            submitBtn.disabled   = false;
+            submitBtn.disabled    = false;
             submitBtn.textContent = 'View Dashboard';
         }
     } catch {
         showError('Network error');
-        submitBtn.disabled   = false;
+        submitBtn.disabled    = false;
         submitBtn.textContent = 'View Dashboard';
     }
 });
+{% endif %}
 
 // ═══════════════════════════════════════════════════════════════════
-// ZKP VERIFICATION — load status + trigger verify
-//
-// NEW FLOW:
-//   1. GET /seller/zkp-verify/?email=X  → check verification status
-//   2. If unverified → seller clicks "Verify Identity"
-//   3. POST /seller/zkp-verify/ {email, pin}
-//      → Payment App fetches proof from Shopping App
-//      → Payment App verifies via Strapi /verify-kyc-proof
-//      → Stores result, returns success/fail
+// ZKP VERIFICATION
 // ═══════════════════════════════════════════════════════════════════
-
 function showZkpState(state) {
     ['Loading', 'NotRegistered', 'Unverified', 'Verifying', 'Verified', 'Failed']
         .forEach(s => {
@@ -383,7 +341,6 @@ async function loadZkpStatus() {
 
 function applyZkpState(data) {
     if (data.zkp_verified) {
-        // Already verified on this (Payment) app
         setDot('#00FF00', 'Verified');
         document.getElementById('zkpCommitmentHash').textContent =
             data.commitment_hash ? data.commitment_hash.slice(0, 20) + '…' : '—';
@@ -393,31 +350,32 @@ function applyZkpState(data) {
             data.zkp_verified_at ? new Date(data.zkp_verified_at).toLocaleString() : '—';
         showZkpState('Verified');
     } else if (data.commitment_hash) {
-        // Registered on Shopping App, not yet verified on Payment App
         setDot('#f59e0b', 'Unverified');
         showZkpState('Unverified');
     } else {
-        // Not registered at all (Shopping App hasn't registered this seller)
         setDot('#4b5563', 'Not Registered');
         showZkpState('NotRegistered');
     }
 }
 
-async function triggerZkpVerification() {
-    const pin = window._sellerPin || '';
-    if (!pin) {
-        showZkpError('Session expired. Please re-enter your PIN by refreshing the page.');
-        return;
-    }
 
+async function triggerZkpVerification() {
     showZkpState('Verifying');
     setDot('#f59e0b', 'Verifying…');
+
+    // Build payload — include PIN if available, omit if session-authenticated
+    const payload = { email: SELLER_EMAIL };
+    const pin = window._sellerPin || '';
+    if (pin) {
+        payload.pin = pin;
+    }
+    // If no PIN, the backend will check session auth instead
 
     try {
         const resp = await fetch('/seller/zkp-verify/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: SELLER_EMAIL, pin: pin }),
+            body: JSON.stringify(payload),
         });
         const data = await resp.json();
 
@@ -431,9 +389,13 @@ async function triggerZkpVerification() {
                 data.verified_at ? new Date(data.verified_at).toLocaleString() : 'Just now';
             showZkpState('Verified');
         } else if (resp.status === 404) {
-            // Not registered on Shopping App
             setDot('#4b5563', 'Not Registered');
             showZkpState('NotRegistered');
+        } else if (resp.status === 401) {
+            // Auth failed — PIN expired AND session expired
+            showZkpState('Unverified');
+            setDot('#f59e0b', 'Unverified');
+            showZkpError('Session expired. Please refresh the page and re-enter your PIN.');
         } else {
             setDot('#ef4444', 'Failed');
             document.getElementById('zkpFailedReason').textContent =
@@ -448,6 +410,7 @@ async function triggerZkpVerification() {
     }
 }
 
+
 function showZkpError(msg) {
     const el = document.getElementById('zkpVerifyError');
     el.textContent = msg;
@@ -456,7 +419,7 @@ function showZkpError(msg) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// HELPERS  (original — unchanged)
+// HELPERS
 // ═══════════════════════════════════════════════════════════════════
 function showError(message) {
     const errorMsg = document.getElementById('errorMsg');
@@ -464,5 +427,48 @@ function showError(message) {
     errorMsg.classList.remove('hidden');
     setTimeout(() => errorMsg.classList.add('hidden'), 5000);
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTO-POPULATE DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+{% if pin_verified %}
+(function () {
+    const data = {{ initial_data_json|safe }};
+
+    document.getElementById('balance').textContent    = parseFloat(data.wallet.balance).toLocaleString();
+    document.getElementById('currency').textContent   = data.wallet.currency;
+    document.getElementById('totalSales').textContent = parseFloat(data.total_sales).toLocaleString();
+
+    const txDiv = document.getElementById('transactions');
+    txDiv.innerHTML = data.transactions && data.transactions.length > 0
+        ? data.transactions.map(tx => `
+            <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <p class="text-xs font-black uppercase text-primary">Sale</p>
+                        <p class="text-xs font-bold text-white/50 mt-1">${new Date(tx.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <p class="text-sm font-black text-primary">+${parseFloat(tx.amount).toLocaleString()}</p>
+                </div>
+            </div>`).join('')
+        : '<p class="p-4 text-xs font-bold text-white/70 text-center">No sales yet</p>';
+
+    const itemsDiv = document.getElementById('items');
+    itemsDiv.innerHTML = data.items && data.items.length > 0
+        ? data.items.map(item => `
+            <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                <div class="flex justify-between items-center">
+                    <div class="flex-1">
+                        <p class="text-xs font-black uppercase">${item.description || 'Item'}</p>
+                        <p class="text-xs font-bold text-white/50 mt-1">ID: ${item.id}</p>
+                    </div>
+                    <p class="text-sm font-black text-primary">${parseFloat(item.amount).toLocaleString()}</p>
+                </div>
+            </div>`).join('')
+        : '<p class="p-4 text-xs font-bold text-white/70 text-center">No items yet</p>';
+
+    loadZkpStatus();
+})();
+{% endif %}
 </script>
 {% endblock %}

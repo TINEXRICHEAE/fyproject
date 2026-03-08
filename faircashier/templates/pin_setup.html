@@ -47,12 +47,15 @@
         </div>
 
         <!-- Role -->
+        {% if prefill_role %}
+        <input type="hidden" id="role" name="role" value="{{ prefill_role }}"/>
+        {% else %}
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Account Type
             </label>
-            <select 
-                id="role" 
+            <select
+                id="role"
                 name="role"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
             >
@@ -60,6 +63,7 @@
                 <option value="seller">Seller</option>
             </select>
         </div>
+        {% endif %}
 
         <!-- PIN Entry -->
         <div>
