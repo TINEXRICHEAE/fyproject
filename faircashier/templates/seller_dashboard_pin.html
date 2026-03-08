@@ -87,18 +87,6 @@
 
         <!-- ══════════════════════════════════════════════════════════════
              ZKP IDENTITY VERIFICATION SECTION
-
-             NEW: Verification-only flow.
-             Registration happens on the Shopping App (which has KYC data).
-             Payment App only VERIFIES the proof — never sees raw KYC.
-
-             States:
-               loading        → checking status
-               not-registered → seller hasn't registered on Shopping App yet
-               unverified     → registered on Shopping App, not yet verified here
-               verifying      → verification in progress
-               verified       → proof verified via Strapi
-               failed         → verification failed
              ══════════════════════════════════════════════════════════════ -->
         <div class="border-2 border-white" id="zkpSection">
 
@@ -121,7 +109,7 @@
                     <p class="text-xs font-bold text-white/50 uppercase">Fetching verification status…</p>
                 </div>
 
-                <!-- NOT REGISTERED state (must register on Shopping App first) -->
+                <!-- NOT REGISTERED state -->
                 <div id="zkpStateNotRegistered" class="hidden">
                     <div class="flex items-start gap-3">
                         <span class="material-symbols-outlined text-white/30 text-2xl mt-0.5">block</span>
@@ -135,7 +123,7 @@
                     </div>
                 </div>
 
-                <!-- UNVERIFIED state (registered on Shopping App, not yet verified here) -->
+                <!-- UNVERIFIED state -->
                 <div id="zkpStateUnverified" class="hidden space-y-4">
                     <div class="flex items-start gap-3">
                         <span class="material-symbols-outlined text-white/60 text-2xl mt-0.5">lock_open</span>
@@ -255,6 +243,14 @@
 const SELLER_EMAIL = '{{ email }}';
 
 // ═══════════════════════════════════════════════════════════════════
+// AJAX AUTH TOKEN  (NEW)
+// ═══════════════════════════════════════════════════════════════════
+// Signed token from the view — lets JS make authenticated fetch()
+// calls without relying on session cookies (blocked in cross-origin
+// iframes by default in modern browsers).
+const AJAX_TOKEN = '{{ ajax_token|default:"" }}';
+
+// ═══════════════════════════════════════════════════════════════════
 // PIN INPUT
 // ═══════════════════════════════════════════════════════════════════
 {% if not pin_verified %}
@@ -279,9 +275,6 @@ document.getElementById('dashboardForm').addEventListener('submit', async functi
     if (pin.length !== 4) { showError('Enter complete PIN'); return; }
     document.getElementById('pin').value = pin;
 
-    // Store PIN in sessionStorage so it survives the redirect
-    sessionStorage.setItem('_sellerPin', pin);
-
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled    = true;
     submitBtn.textContent = 'Loading...';
@@ -294,6 +287,8 @@ document.getElementById('dashboardForm').addEventListener('submit', async functi
         const data = await response.json();
 
         if (response.ok && data.success) {
+            // redirect_url now contains a signed dash_token —
+            // no cookies needed for the next request.
             window.location.href = data.redirect_url;
         } else {
             showError(data.error || 'Invalid PIN');
@@ -330,7 +325,12 @@ function setDot(color, text) {
 
 async function loadZkpStatus() {
     try {
-        const r = await fetch(`/seller/zkp-verify/?email=${encodeURIComponent(SELLER_EMAIL)}`);
+        // Include the signed token so the endpoint can authenticate
+        // even when third-party cookies are blocked in the iframe.
+        let url = `/seller/zkp-verify/?email=${encodeURIComponent(SELLER_EMAIL)}`;
+        if (AJAX_TOKEN) url += `&dash_token=${encodeURIComponent(AJAX_TOKEN)}`;
+
+        const r = await fetch(url);
         const data = await r.json();
         applyZkpState(data);
     } catch {
@@ -358,18 +358,13 @@ function applyZkpState(data) {
     }
 }
 
-
 async function triggerZkpVerification() {
     showZkpState('Verifying');
     setDot('#f59e0b', 'Verifying…');
 
-    // Build payload — include PIN if available, omit if session-authenticated
+    // Include the signed token for authentication (NEW)
     const payload = { email: SELLER_EMAIL };
-    const pin = window._sellerPin || '';
-    if (pin) {
-        payload.pin = pin;
-    }
-    // If no PIN, the backend will check session auth instead
+    if (AJAX_TOKEN) payload.dash_token = AJAX_TOKEN;
 
     try {
         const resp = await fetch('/seller/zkp-verify/', {
@@ -392,7 +387,6 @@ async function triggerZkpVerification() {
             setDot('#4b5563', 'Not Registered');
             showZkpState('NotRegistered');
         } else if (resp.status === 401) {
-            // Auth failed — PIN expired AND session expired
             showZkpState('Unverified');
             setDot('#f59e0b', 'Unverified');
             showZkpError('Session expired. Please refresh the page and re-enter your PIN.');
@@ -409,7 +403,6 @@ async function triggerZkpVerification() {
         showZkpState('Failed');
     }
 }
-
 
 function showZkpError(msg) {
     const el = document.getElementById('zkpVerifyError');

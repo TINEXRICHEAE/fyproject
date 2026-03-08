@@ -3,12 +3,11 @@ Payment App — views_zkp.py (FIXED)
 
 Verification-only. Registration is Shopping App's job.
 
-FIX: _verify_seller() now accepts EITHER:
-  a) PIN auth: POST {email, pin}
-  b) Session auth: POST {email} when seller_dashboard_auth_{email} is in session
-
-This fixes "Session expired" when seller accesses dashboard via iframe
-(session-authenticated flow where PIN was already verified on redirect).
+FIX: _verify_seller() now accepts THREE auth modes:
+  a) PIN auth:       POST {email, pin}
+  b) Session auth:   POST {email} when seller_dashboard_auth_{email} is in session
+  c) dash_token auth: POST/GET {email, dash_token} — signed token from seller dashboard
+                      (works inside cross-origin iframes where cookies are blocked)
 """
 
 import json
@@ -22,6 +21,7 @@ from django.views.decorators.http import require_http_methods
 from .zkp_client import ZKPClient
 from .pin_auth import PINAuthenticator
 from .models import Users
+from .seller_proxy_views import _verify_dash_token      # ← NEW: reuse the same helper
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,23 @@ def _get_verification_status(request):
     email = request.GET.get('email', '').strip().lower()
     if not email:
         return JsonResponse({'error': 'Email required'}, status=400)
+
+    # ── Auth check for GET (dash_token or session) ────────────────
+    dash_token = request.GET.get('dash_token', '').strip()
+    authenticated = False
+
+    if dash_token and _verify_dash_token(dash_token, email):
+        authenticated = True
+
+    if not authenticated:
+        session_key = f'seller_dashboard_auth_{email}'
+        if request.session.get(session_key):
+            authenticated = True
+
+    # Allow GET status check without auth (returns public status),
+    # but log it for awareness
+    if not authenticated:
+        logger.debug(f"ZKP status check without auth for {email} (allowed for GET)")
 
     try:
         user = Users.objects.get(email=email, role='seller')
@@ -72,10 +89,11 @@ def _verify_seller(request):
     """
     Verify a seller's KYC proof via Strapi.
     
-    Accepts TWO auth modes:
-      1. PIN auth:     POST {email, pin}
-      2. Session auth: POST {email} — when seller_dashboard_auth_{email} is in session
-                       (set by seller_proxy_views.py after PIN login + redirect)
+    Accepts THREE auth modes:
+      1. PIN auth:       POST {email, pin}
+      2. Session auth:   POST {email} — when seller_dashboard_auth_{email} is in session
+      3. dash_token auth: POST {email, dash_token} — signed token from seller dashboard
+                          (works inside cross-origin iframes where cookies are blocked)
     """
     try:
         body = json.loads(request.body)
@@ -84,6 +102,7 @@ def _verify_seller(request):
 
     email = body.get('email', '').strip().lower()
     pin = body.get('pin', '').strip()
+    dash_token = body.get('dash_token', '').strip()       # ← NEW
     if not email:
         return JsonResponse({'error': 'Email is required'}, status=400)
 
@@ -92,7 +111,7 @@ def _verify_seller(request):
     except Users.DoesNotExist:
         return JsonResponse({'error': 'Seller not found'}, status=404)
 
-    # ── Auth: try PIN first, then fall back to session ────────────────
+    # ── Auth: try PIN first, then dash_token, then session ────────
     authenticated = False
 
     if pin:
@@ -105,8 +124,14 @@ def _verify_seller(request):
             }, status=401)
         authenticated = True
 
+    if not authenticated and dash_token:
+        # Mode 2: Signed dash_token auth (iframe-safe, no cookies needed)
+        if _verify_dash_token(dash_token, email):
+            authenticated = True
+            logger.debug(f"ZKP verify: dash_token auth OK for {email}")
+
     if not authenticated:
-        # Mode 2: Session auth (set by seller_dashboard_iframe POST handler)
+        # Mode 3: Session auth (set by seller_dashboard_iframe POST handler)
         session_key = f'seller_dashboard_auth_{email}'
         if request.session.get(session_key):
             authenticated = True

@@ -650,7 +650,7 @@ class BalanceProof(models.Model):
         UNKNOWN = 'unknown', 'Unknown'
 
     id             = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    order_id       = models.IntegerField(db_index=True)
+    order_id       = models.CharField(max_length=50, db_index=True)
     seller_email   = models.EmailField(db_index=True)
     buyer_email    = models.EmailField()   # never sent to shopping app
     order_hash     = models.CharField(max_length=128)

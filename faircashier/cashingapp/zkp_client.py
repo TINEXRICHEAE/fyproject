@@ -59,8 +59,8 @@ class ZKPClient:
     def generate_balance_proof(self, balance, required_amount, order_hash, timestamp):
         """Generate Groth16 balance proof. balance is PRIVATE input."""
         return self._request('post', '/api/generate-balance-proof', json={
-            'balance': str(balance), 'requiredAmount': str(required_amount),
-            'orderHash': str(order_hash), 'timestamp': str(timestamp),
+            'balance': str(balance), 'required_amount': str(required_amount),
+            'order_hash': str(order_hash), 'timestamp': str(timestamp),
         }, timeout=60)
 
     def verify_balance_proof(self, proof, public_signals):
