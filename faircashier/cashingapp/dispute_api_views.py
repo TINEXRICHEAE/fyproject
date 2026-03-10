@@ -385,7 +385,7 @@ def _sync_dispute_to_shopping_app(dispute, payment_status, refund_amount=None, a
 
         platform = dispute.payment_request_item.payment_request.platform
         # Shopping app's callback URL (derive from platform domain)
-        shopping_app_url = platform.domain.rstrip('/')
+        shopping_app_url = settings.SHOPPING_APP_URL
 
         payload = {
             'api_key': str(platform.api_key),

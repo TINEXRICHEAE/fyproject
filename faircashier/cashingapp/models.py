@@ -420,7 +420,7 @@ class Dispute(models.Model):
         ('resolved_without_refund', 'Resolved Without Refund'),
     )
     status = models.CharField(
-        max_length=30, choices=STATUS_CHOICES, default='submitted')
+        max_length=50, choices=STATUS_CHOICES, default='submitted')
     disputed_amount = models.DecimalField(
     max_digits=12, decimal_places=2, null=True, blank=True,
     help_text="Amount of the specific disputed item (not the full payment request item)"
