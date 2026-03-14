@@ -48,10 +48,36 @@
     <!-- Wallet Display (Hidden Initially) -->
     <div id="walletDisplay" class="hidden space-y-6 mt-6">
         <!-- Balance -->
-        <div class="border-2 border-white p-6 text-center">
-            <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Balance</p>
-            <p class="text-4xl font-black text-primary" id="balance">0.00</p>
-            <p class="text-xs font-bold text-white/70 uppercase mt-2" id="currency">UGX</p>
+        <div class="border-2 border-white p-6">
+            <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-4 text-center">Wallet Balance</p>
+
+            <!-- Total -->
+            <div class="text-center mb-4">
+                <p class="text-4xl font-black text-primary" id="balance">0.00</p>
+                <p class="text-xs font-bold text-white/70 uppercase mt-1" id="currency">UGX</p>
+                <p class="text-xs text-white/40 mt-0.5">Total Balance</p>
+            </div>
+
+            <!-- Free / Reserved split -->
+            <div class="grid grid-cols-2 gap-3 border-t border-white/20 pt-4">
+                <!-- Free balance -->
+                <div class="border border-white/30 p-3 text-center">
+                    <p class="text-xs font-black uppercase tracking-widest text-white/50 mb-1">Free</p>
+                    <p class="text-xl font-black text-primary" id="freeBalance">0.00</p>
+                    <p class="text-xs text-white/40 mt-0.5">Withdrawable</p>
+                </div>
+                <!-- Reserved balance -->
+                <div class="border border-white/30 p-3 text-center">
+                    <p class="text-xs font-black uppercase tracking-widest text-white/50 mb-1">Reserved</p>
+                    <p class="text-xl font-black text-white/60" id="reservedBalance">0.00</p>
+                    <p class="text-xs text-white/40 mt-0.5">Pending delivery</p>
+                </div>
+            </div>
+
+            <!-- Reserved balance explanation (shown only when reserved > 0) -->
+            <div id="reservedNote" class="hidden mt-3 border border-white/20 bg-white/5 p-2 text-xs text-white/50 text-center">
+                🔒 Reserved funds are held in escrow until buyers confirm delivery.
+            </div>
         </div>
 
         <!-- Quick Actions -->
@@ -144,8 +170,18 @@ document.getElementById('walletForm').addEventListener('submit', async function(
         
         if (response.ok && data.success) {
             // Display wallet info
-            document.getElementById('balance').textContent = parseFloat(data.wallet.balance).toLocaleString();
-            document.getElementById('currency').textContent = data.wallet.currency;
+            const totalBal    = parseFloat(data.wallet.balance)          || 0;
+            const reservedBal = parseFloat(data.wallet.reserved_balance) || 0;
+            const freeBal     = totalBal - reservedBal;
+
+            document.getElementById('balance').textContent         = totalBal.toLocaleString();
+            document.getElementById('currency').textContent        = data.wallet.currency;
+            document.getElementById('freeBalance').textContent     = freeBal.toLocaleString();
+            document.getElementById('reservedBalance').textContent = reservedBal.toLocaleString();
+
+            if (reservedBal > 0) {
+                document.getElementById('reservedNote').classList.remove('hidden');
+            }
             
             // Display transactions
             const txDiv = document.getElementById('transactions');

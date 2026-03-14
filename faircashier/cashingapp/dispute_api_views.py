@@ -289,10 +289,26 @@ def resolve_dispute_with_sync(request, dispute_id):
                     ),
                 )
 
+                # Funds were held in seller's reserved_balance — release the
+                # reservation AND deduct from balance in one step.
                 seller_wallet.balance -= refund_amount
+                if seller_wallet.reserved_balance >= refund_amount:
+                    seller_wallet.reserved_balance -= refund_amount
+                else:
+                    # Guard: clamp to zero if already partially released
+                    seller_wallet.reserved_balance = Decimal('0.00')
                 buyer_wallet.balance += refund_amount
                 seller_wallet.save()
                 buyer_wallet.save()
+
+                # Mark the payment item as no longer in escrow
+                payment_item_ref = dispute.payment_request_item
+                payment_item_ref.is_escrowed = False
+                payment_item_ref.is_cleared  = True
+                payment_item_ref.cleared_at  = timezone.now()
+                payment_item_ref.save(update_fields=[
+                    'is_escrowed', 'is_cleared', 'cleared_at', 'updated_at',
+                ])
 
                 dispute.refund_transaction = refund_tx
                 dispute.status = 'resolved_with_refund'
@@ -300,16 +316,16 @@ def resolve_dispute_with_sync(request, dispute_id):
                 refund_amount_str = str(refund_amount)
 
             else:
-                # Reject dispute — release held funds
+                # Reject dispute — release seller's escrowed funds to free balance
                 dispute.status = 'resolved_without_refund'
                 payment_status_to_sync = 'Not Refunded'
                 refund_amount_str = None
 
-                # Mark payment item as cleared (release funds)
                 payment_item = dispute.payment_request_item
-                payment_item.is_cleared = True
-                payment_item.cleared_at = timezone.now()
+                payment_item.is_cleared  = True
+                payment_item.cleared_at  = timezone.now()
                 payment_item.save()
+
 
             dispute.admin_notes = admin_notes
             dispute.resolved_by = request.user

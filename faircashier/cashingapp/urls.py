@@ -65,6 +65,12 @@ urlpatterns = [
     path('payment/<uuid:request_id>/cancel-deposit/shopping-item/<int:shopping_order_item_id>/',
          buyer_seller_views.cancel_deposit_by_order_item,
          name='cancel_deposit_by_order_item'),
+
+    # Release seller's escrowed funds after buyer confirms delivery
+    # or admin resolves dispute without refund
+    path('payment/<uuid:request_id>/release-seller-funds/shopping-item/<int:shopping_order_item_id>/',
+         buyer_seller_views.release_seller_funds,
+         name='release_seller_funds'),
     
     # ============= ADMIN/SUPERADMIN ROUTES (PASSWORD-BASED) =============
     

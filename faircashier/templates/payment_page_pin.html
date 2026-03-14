@@ -412,8 +412,12 @@ document.getElementById('submitBtn').addEventListener('click', async function ()
 
             // Update per-item badges
             (data.item_results||[]).forEach(r => {
-                updateItemBadge(r.item_id, r.status,
-                    { paid:'Paid ✓', deposited:'🔒 Reserved', failed:'Failed ✗' }[r.status] || r.status);
+                updateItemBadge(r.item_id, r.status, {
+                    escrowed: '🔒 Held in Escrow',
+                    deposited: '🔒 Reserved in Wallet',
+                    paid:     'Released ✓',
+                    failed:   'Failed ✗',
+                }[r.status] || r.status);
             });
 
             // Refresh wallet display with server-returned figures
@@ -432,11 +436,19 @@ document.getElementById('submitBtn').addEventListener('click', async function ()
             showStatus(data.message || 'Success!', 'success');
 
             // PostMessage to parent iframe
+            const hasEscrowed  = (data.item_results||[]).some(r=>r.status==='escrowed');
             const hasDeposited = (data.item_results||[]).some(r=>r.status==='deposited');
             const hasPaid      = (data.item_results||[]).some(r=>r.status==='paid');
-            const msgType = (hasDeposited && !hasPaid) ? 'payment_deposited'
-                          : (hasDeposited && hasPaid)  ? 'payment_mixed'
-                          : 'payment_success';
+            let msgType;
+            if (hasEscrowed && !hasDeposited && !hasPaid) {
+                msgType = 'payment_escrowed';       // all items: buyer paid → seller reserved
+            } else if (hasDeposited && !hasEscrowed && !hasPaid) {
+                msgType = 'payment_deposited';      // all items: buyer reserved (old flow)
+            } else if (hasPaid && !hasEscrowed && !hasDeposited) {
+                msgType = 'payment_success';        // all items fully released already
+            } else {
+                msgType = 'payment_mixed';          // combination
+            }
             setTimeout(() => {
                 window.parent.postMessage({ type: msgType, request_id: REQUEST_ID }, '*');
             }, 1200);

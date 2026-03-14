@@ -314,6 +314,7 @@ class PaymentRequest(models.Model):
         ('initiated', 'Initiated'),
         ('awaiting_payment', 'Awaiting Payment'),
         ('paid', 'Paid'),
+        ('escrowed', 'Escrowed'),
         ('awaiting_clearance', 'Awaiting Clearance'),
         ('cleared', 'Cleared'),
         ('failed', 'Failed'),
@@ -354,18 +355,25 @@ class PaymentRequestItem(models.Model):
     )
     is_cleared = models.BooleanField(
         default=False, help_text="Buyer confirmed delivery")
-    is_deposited = models.BooleanField(
+    
+    is_escrowed = models.BooleanField(
             default=False,
-            help_text="True when buyer has deposited funds to their wallet for this item"
+            help_text="True when funds are transfered to sellers reserve balance, awaiting clearance"
         )
     deposited_amount = models.DecimalField(
         max_digits=12, decimal_places=2,
         null=True, blank=True,
         help_text="Amount deposited to buyer wallet for this item"
     )
-    deposited_at = models.DateTimeField(
+    escrowed_amount = models.DecimalField(
+        max_digits=12, decimal_places=2,
         null=True, blank=True,
-        help_text="When the deposit was made"
+        help_text="Amount escrowed for this item"
+    )
+    
+    escrowed_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the escrow was made"
     )
     shopping_order_item_id = models.IntegerField(
         null=True, blank=True,

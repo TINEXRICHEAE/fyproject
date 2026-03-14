@@ -221,50 +221,60 @@ def process_payment_with_pin(request, request_id):
                 response_data['attempts_remaining'] = pin_result['attempts_remaining']
             return JsonResponse(response_data, status=401)
         
-        # Process payment
+        # Process payment — escrow into seller's reserved balance
         buyer_wallet = buyer.wallet
-        
-        if buyer_wallet.balance < payment_request.total_amount:
+
+        if buyer_wallet.free_balance < payment_request.total_amount:
             return JsonResponse({
                 'error': 'Insufficient balance',
-                'required': str(payment_request.total_amount),
-                'available': str(buyer_wallet.balance)
+                'required':  str(payment_request.total_amount),
+                'available': str(buyer_wallet.free_balance),
             }, status=400)
-        
+
         with db_transaction.atomic():
+            buyer_wl = Wallet.objects.select_for_update().get(pk=buyer_wallet.pk)
+
             for item in payment_request.items.all():
-                seller = Users.objects.get(email=item.seller_email, role='seller')
-                seller_wallet = seller.wallet
-                
-                transaction = Transaction.objects.create(
+                seller    = Users.objects.get(email=item.seller_email, role='seller')
+                seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+                txn = Transaction.objects.create(
                     platform=payment_request.platform,
-                    from_wallet=buyer_wallet,
-                    to_wallet=seller_wallet,
+                    from_wallet=buyer_wl,
+                    to_wallet=seller_wl,
                     amount=item.amount,
                     transaction_type='transfer',
                     status='completed',
-                    description=f'Payment: {item.product_description}'
+                    description=(
+                        f'Escrow hold (awaiting delivery confirmation): '
+                        f'{item.product_description or item.seller_email}'
+                    ),
                 )
-                
-                buyer_wallet.balance -= item.amount
-                seller_wallet.balance += item.amount
-                
-                buyer_wallet.save()
-                seller_wallet.save()
-                
-                item.transaction = transaction
-                item.save()
-            
-            payment_request.status = 'paid'
+
+                buyer_wl.balance           -= item.amount
+                seller_wl.balance          += item.amount
+                seller_wl.reserved_balance += item.amount
+                buyer_wl.save(update_fields=['balance', 'updated_at'])
+                seller_wl.save(update_fields=['balance', 'reserved_balance', 'updated_at'])
+
+                item.transaction      = txn
+                item.is_escrowed      = True
+                item.escrowed_amount  = item.amount
+                item.escrowed_at      = timezone.now()
+                item.save(update_fields=[
+                    'transaction', 'is_escrowed', 'escrowed_amount', 'escrowed_at', 'updated_at',
+                ])
+
+            payment_request.status = 'escrowed'
             payment_request.save()
-        
-        logger.info(f"✅ Payment processed: {request_id}")
-        
+
+        logger.info(f"✅ Payment escrowed: {request_id}")
+
         return JsonResponse({
             'success': True,
-            'message': 'Payment successful',
+            'message': 'Payment successful — funds held until delivery confirmed',
             'request_id': str(request_id),
-            'amount': str(payment_request.total_amount)
+            'amount': str(payment_request.total_amount),
         }, status=200)
         
     except PaymentRequest.DoesNotExist:
@@ -307,6 +317,8 @@ def wallet_view_pin(request):
             'success': True,
             'wallet': {
                 'balance': str(wallet.balance),
+                'reserved_balance': str(wallet.reserved_balance),
+                'free_balance':     str(wallet.free_balance),
                 'currency': wallet.currency
             },
             'transactions': [
@@ -487,11 +499,16 @@ def cashout_pin(request):
         # Validation
         if amount < 5000:
             return JsonResponse({'error': 'Minimum cashout is 5,000 UGX'}, status=400)
-        
-        if wallet.balance < amount:
+
+        # Use free_balance — sellers cannot cash out reserved/escrowed funds
+        if wallet.free_balance < amount:
             return JsonResponse({
-                'error': 'Insufficient balance',
-                'available': str(wallet.balance)
+                'error': 'Insufficient free balance',
+                'available':       str(wallet.free_balance),
+                'total_balance':   str(wallet.balance),
+                'reserved_balance': str(wallet.reserved_balance),
+                'note': 'Some funds are reserved in escrow and cannot be withdrawn yet.'
+                        if wallet.reserved_balance > 0 else '',
             }, status=400)
         
         # Duplicate protection
@@ -663,42 +680,52 @@ def deposit_and_pay(request, request_id):
                 'available': str(buyer_wallet.balance)
             }, status=400)
         
-        # Step 3: Process the payment
+        # Step 3: Process the payment — escrow into seller's reserved balance
         with db_transaction.atomic():
+            buyer_wl = Wallet.objects.select_for_update().get(pk=buyer_wallet.pk)
+
             for item in payment_request.items.all():
-                seller = Users.objects.get(email=item.seller_email, role='seller')
-                seller_wallet = seller.wallet
-                
-                transaction = Transaction.objects.create(
+                seller    = Users.objects.get(email=item.seller_email, role='seller')
+                seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+                txn = Transaction.objects.create(
                     platform=payment_request.platform,
-                    from_wallet=buyer_wallet,
-                    to_wallet=seller_wallet,
+                    from_wallet=buyer_wl,
+                    to_wallet=seller_wl,
                     amount=item.amount,
                     transaction_type='transfer',
                     status='completed',
-                    description=f'Payment: {item.product_description}'
+                    description=(
+                        f'Escrow hold (awaiting delivery confirmation): '
+                        f'{item.product_description or item.seller_email}'
+                    ),
                 )
-                
-                buyer_wallet.balance -= item.amount
-                seller_wallet.balance += item.amount
-                
-                buyer_wallet.save()
-                seller_wallet.save()
-                
-                item.transaction = transaction
-                item.save()
-            
-            payment_request.status = 'paid'
+
+                buyer_wl.balance           -= item.amount
+                seller_wl.balance          += item.amount
+                seller_wl.reserved_balance += item.amount
+                buyer_wl.save(update_fields=['balance', 'updated_at'])
+                seller_wl.save(update_fields=['balance', 'reserved_balance', 'updated_at'])
+
+                item.transaction      = txn
+                item.is_escrowed      = True
+                item.escrowed_amount  = item.amount
+                item.escrowed_at      = timezone.now()
+                item.save(update_fields=[
+                    'transaction', 'is_escrowed', 'escrowed_amount', 'escrowed_at', 'updated_at',
+                ])
+
+            payment_request.status = 'escrowed'
             payment_request.save()
-        
-        logger.info(f"✅ Deposit+Pay completed for {email}: {request_id}")
-        
+
+        logger.info(f"✅ Deposit+Escrow completed for {email}: {request_id}")
+
         return JsonResponse({
             'success': True,
-            'message': 'Payment successful',
+            'message': 'Payment successful — funds held until delivery confirmed',
             'request_id': str(request_id),
             'amount': str(payment_request.total_amount),
-            'deposited': str(max(shortfall, Decimal('0')))
+            'deposited': str(max(shortfall, Decimal('0'))),
         })
         
     except PaymentRequest.DoesNotExist:
@@ -780,10 +807,15 @@ def seller_request_cashout(request):
 
         # Verify balance
         wallet = seller.wallet
-        if wallet.balance < amount:
+        if wallet.free_balance < amount:
+            msg = f'Insufficient free balance. Available: {wallet.free_balance:,.0f} UGX'
+            if wallet.reserved_balance > 0:
+                msg += f' ({wallet.reserved_balance:,.0f} UGX reserved in escrow)'
             return JsonResponse({
-                'error': f'Insufficient balance. Available: {wallet.balance:,.0f} UGX',
-                'available': str(wallet.balance)
+                'error': msg,
+                'available':        str(wallet.free_balance),
+                'total_balance':    str(wallet.balance),
+                'reserved_balance': str(wallet.reserved_balance),
             }, status=400)
 
         # Validate payment method specific fields
@@ -1039,14 +1071,20 @@ def process_payment_items(request, request_id):
                 try:
                     if action == 'pay':
                         # ── Immediate transfer: buyer → seller ────────────
+                        # ── Escrow: buyer pays, funds held in seller's reserved balance ──
+                        # Buyer's balance decreases immediately.
+                        # Seller's balance increases (total) but reserved_balance also
+                        # increases by the same amount, so seller's FREE balance is
+                        # unchanged until the buyer confirms delivery or admin resolves
+                        # the dispute "without refund".
                         if buyer_wl.free_balance < item.amount:
                             raise ValueError(
                                 f"Insufficient free balance for item {item_id}. "
                                 f"Required: {item.amount}, Free: {buyer_wl.free_balance}"
                             )
 
-                        seller        = Users.objects.get(email=item.seller_email, role='seller')
-                        seller_wl     = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+                        seller    = Users.objects.get(email=item.seller_email, role='seller')
+                        seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
 
                         txn = Transaction.objects.create(
                             platform=payment_request.platform,
@@ -1055,19 +1093,30 @@ def process_payment_items(request, request_id):
                             amount=item.amount,
                             transaction_type='transfer',
                             status='completed',
-                            description=f'Payment: {item.product_description or item.seller_email}',
+                            description=(
+                                f'Escrow hold (awaiting delivery confirmation): '
+                                f'{item.product_description or item.seller_email}'
+                            ),
                         )
 
-                        buyer_wl.balance  -= item.amount
-                        seller_wl.balance += item.amount
+                        buyer_wl.balance           -= item.amount     # buyer pays
+                        seller_wl.balance          += item.amount     # seller receives (total)
+                        seller_wl.reserved_balance += item.amount     # but it's held (reserved)
                         buyer_wl.save(update_fields=['balance', 'updated_at'])
-                        seller_wl.save(update_fields=['balance', 'updated_at'])
+                        seller_wl.save(update_fields=['balance', 'reserved_balance', 'updated_at'])
 
-                        item.transaction = txn
-                        item.save(update_fields=['transaction', 'updated_at'])
+                        # Mark item so release_seller_funds can find it later
+                        item.transaction      = txn
+                        item.is_escrowed     = True
+                        item.escrowed_amount = item.amount
+                        item.escrowed_at     = timezone.now()
+                        item.save(update_fields=[
+                            'transaction', 'is_escrowed',
+                            'escrowed_amount', 'escrowed_at', 'updated_at',
+                        ])
 
-                        item_results.append({'item_id': item_id, 'status': 'paid',      'amount': str(item.amount)})
-                        logger.info(f"  Item {item_id} → paid ({item.amount})")
+                        item_results.append({'item_id': item_id, 'status': 'escrowed', 'amount': str(item.amount)})
+                        logger.info(f"  Item {item_id} → escrowed (held in seller escrow) ({item.amount})")
 
                     elif action == 'deposit':
                         # ── Reserve in wallet (balance stays, reserved grows) ──
@@ -1097,10 +1146,26 @@ def process_payment_items(request, request_id):
 
             # ── Update PaymentRequest status ──────────────────────────────
             statuses = [r['status'] for r in item_results]
-            if   all(s == 'paid'      for s in statuses): overall_status = 'paid';      payment_request.status = 'paid'
-            elif all(s == 'deposited' for s in statuses): overall_status = 'deposited'; payment_request.status = 'awaiting_payment'
-            elif all(s == 'failed'    for s in statuses): overall_status = 'failed';    payment_request.status = 'failed'
-            else:                                         overall_status = 'partial';   payment_request.status = 'awaiting_payment'
+            unique   = set(statuses)
+            if unique == {'escrowed'}:
+                # All items paid and held in seller escrow
+                overall_status         = 'escrowed'
+                payment_request.status = 'escrowed'
+            elif unique == {'deposited'}:
+                # All items reserved in buyer wallet (old flow)
+                overall_status         = 'deposited'
+                payment_request.status = 'awaiting_payment'
+            elif unique == {'failed'}:
+                overall_status         = 'failed'
+                payment_request.status = 'failed'
+            elif 'failed' not in unique and unique <= {'escrowed', 'deposited'}:
+                # Mix of escrow + deposit — all money is committed, none failed
+                overall_status         = 'partial'
+                payment_request.status = 'escrowed'
+            else:
+                # Anything else (includes failures mixed in)
+                overall_status         = 'partial'
+                payment_request.status = 'awaiting_payment'
             payment_request.save(update_fields=['status', 'updated_at'])
 
             buyer_wl.refresh_from_db()
@@ -1108,13 +1173,17 @@ def process_payment_items(request, request_id):
         # ── STEP 4: Notify shopping app ───────────────────────────────────
         _notify_shopping_app(payment_request, item_results, overall_status)
 
-        paid_count = sum(1 for r in item_results if r['status'] == 'paid')
+        
+        
+        esc_count = sum(1 for r in item_results if r['status'] == 'escrowed')
         dep_count  = sum(1 for r in item_results if r['status'] == 'deposited')
+        paid_count = sum(1 for r in item_results if r['status'] == 'paid')
         fail_count = sum(1 for r in item_results if r['status'] == 'failed')
         parts = []
-        if paid_count:  parts.append(f"{paid_count} item(s) paid")
-        if dep_count:   parts.append(f"{dep_count} item(s) deposited to wallet")
-        if fail_count:  parts.append(f"{fail_count} item(s) failed")
+        if esc_count:  parts.append(f"{esc_count} item(s) paid (held until delivery confirmed)")
+        if dep_count:  parts.append(f"{dep_count} item(s) reserved in your wallet")
+        if paid_count: parts.append(f"{paid_count} item(s) fully settled")
+        if fail_count: parts.append(f"{fail_count} item(s) failed")
 
         logger.info(f"✅ process_payment_items complete for {email}: {overall_status}")
 
@@ -1131,6 +1200,122 @@ def process_payment_items(request, request_id):
     except Exception as e:
         logger.error(f"❌ process_payment_items error: {str(e)}", exc_info=True)
         return JsonResponse({'error': 'Payment processing failed. Please try again.'}, status=500)
+
+
+@csrf_exempt
+@xframe_options_exempt
+def release_seller_funds(request, request_id, shopping_order_item_id):
+    """
+    Release the seller's reserved (escrow) funds to their free balance.
+
+    Triggers:
+      (A) Shopping app sends POST after buyer confirms delivery.
+      (B) Internally by resolve_dispute_with_sync when admin selects
+          "resolve_without_refund" (body contains _internal=1).
+
+    POST body (JSON or form-data):
+        api_key   — platform API key  (required for shopping-app calls)
+        _internal — "1"              (skip api_key check)
+
+    Effect (atomic):
+        seller_wallet.reserved_balance -= amount
+        seller_wallet.balance is UNCHANGED  (credited during 'pay' action)
+        → seller free_balance (balance - reserved) rises by amount
+
+    Returns JSON:
+        { success, amount_released, seller_email,
+          seller_free_balance, seller_reserved_balance }
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=405)
+
+    try:
+        if request.content_type and 'application/json' in request.content_type:
+            import json as _json
+            body = _json.loads(request.body)
+        else:
+            body = request.POST
+
+        api_key  = body.get('api_key', '')
+        internal = body.get('_internal', '') == '1'
+
+        if not internal:
+            try:
+                Platform.objects.get(api_key=api_key, is_active=True)
+            except Platform.DoesNotExist:
+                return JsonResponse({'error': 'Invalid API key'}, status=403)
+
+        try:
+            payment_request = PaymentRequest.objects.get(request_id=request_id)
+        except PaymentRequest.DoesNotExist:
+            return JsonResponse({'error': 'Payment request not found'}, status=404)
+
+        try:
+            item = PaymentRequestItem.objects.get(
+                payment_request=payment_request,
+                shopping_order_item_id=shopping_order_item_id,
+                is_escrowed=True,
+            )
+        except PaymentRequestItem.DoesNotExist:
+            return JsonResponse(
+                {'error': (
+                    f'No escrowed item for order item {shopping_order_item_id}. '
+                    'Already released or refunded.'
+                )},
+                status=404,
+            )
+
+        amount = item.escrowed_amount or item.amount
+
+        with db_transaction.atomic():
+            seller    = Users.objects.get(email=item.seller_email, role='seller')
+            seller_wl = Wallet.objects.select_for_update().get(pk=seller.wallet.pk)
+
+            if seller_wl.reserved_balance < amount:
+                return JsonResponse(
+                    {'error': 'Seller reserved balance mismatch — cannot release'},
+                    status=400,
+                )
+
+            seller_wl.reserved_balance -= amount
+            seller_wl.save(update_fields=['reserved_balance', 'updated_at'])
+
+            item.is_escrowed = False
+            item.is_cleared  = True
+            item.cleared_at  = timezone.now()
+            item.save(update_fields=[
+                'is_escrowed', 'is_cleared', 'cleared_at', 'updated_at',
+            ])
+
+            still_escrowed = payment_request.items.filter(is_escrowed=True).exists()
+            if not still_escrowed:
+                payment_request.status = 'cleared'
+                payment_request.save(update_fields=['status', 'updated_at'])
+
+        logger.info(
+            f"✅ Seller escrow released: {amount} UGX → {seller.email} "
+            f"(shopping_order_item_id={shopping_order_item_id})"
+        )
+
+        # Notify shopping app: item is now fully paid (escrow released)
+        _notify_shopping_app(
+            payment_request,
+            [{'item_id': item.item_id, 'status': 'paid', 'amount': str(amount)}],
+            'paid',
+        )
+
+        return JsonResponse({
+            'success':                 True,
+            'amount_released':         str(amount),
+            'seller_email':            seller.email,
+            'seller_free_balance':     str(seller_wl.free_balance),
+            'seller_reserved_balance': str(seller_wl.reserved_balance),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ release_seller_funds error: {str(e)}", exc_info=True)
+        return JsonResponse({'error': 'Could not release funds'}, status=500)
+
 
 
 @csrf_exempt
