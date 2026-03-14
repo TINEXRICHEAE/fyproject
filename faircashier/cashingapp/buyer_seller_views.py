@@ -9,20 +9,23 @@ from django.db import transaction as db_transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 from django.core.cache import cache
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import logging
 import hashlib
 import json
-
+import hmac
+import math
 from .models import (
     Users, Wallet, PaymentRequest, Transaction, 
-    Platform, ActivityLog, PaymentRequestItem, CashoutRequest
+    Platform, ActivityLog, PaymentRequestItem, MobileMoneyTransaction, CashoutRequest
 )
 from .pin_auth import PINAuthenticator
 from .views import generate_confirmation_token
 
 logger = logging.getLogger(__name__)
 
+import hmac
+import math
 
 # ============= HELPER: BUILD REDIRECT URL =============
 
@@ -394,172 +397,595 @@ def buyer_dashboard(request):
     return render(request, 'buyer_dashboard_pin.html', {'email': email})
 
 
-# ============= DEPOSIT (PIN-PROTECTED) =============
 
+ 
+# ── tuneable constants ────────────────────────────────────────────────────────
+_IDEMPOTENCY_WINDOW_SECONDS = 30   # duplicate-request guard window
+_IDEMPOTENCY_TTL_SECONDS    = 60   # cache-key TTL
+_DEPOSIT_MIN_UGX  = Decimal("1000")
+_CASHOUT_MIN_UGX  = Decimal("5000")
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+ 
+# =============================================================================
+# Shared helpers
+# =============================================================================
+ 
+def _idempotency_key(prefix: str, user_id: int, amount: Decimal,
+                     phone: str, platform_id: str) -> str:
+    """
+    Build an opaque cache key unique per (user, amount, phone, platform)
+    within the current 30-second time-bucket.
+ 
+    The key is an HMAC-SHA256 digest so it cannot be guessed or enumerated
+    by inspecting cache storage.
+    """
+    bucket = math.floor(
+        timezone.now().timestamp() / _IDEMPOTENCY_WINDOW_SECONDS
+    )
+    raw    = f"{prefix}:{user_id}:{amount}:{phone}:{platform_id}:{bucket}"
+    digest = hmac.new(b"fc-idempotency-v2", raw.encode(), hashlib.sha256).hexdigest()
+    return f"idem:{prefix}:{digest}"
+ 
+ 
+def _log_activity(user, action: str, description: str,
+                  request=None, metadata: dict | None = None,
+                  platform=None) -> None:
+    """Write one ActivityLog row and one Python logger line."""
+    ip = None
+    if request:
+        xff = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip  = xff.split(",")[0].strip() if xff else request.META.get("REMOTE_ADDR")
+ 
+    ActivityLog.objects.create(
+        user=user,
+        platform=platform,
+        action=action,
+        description=description,
+        ip_address=ip,
+        metadata=metadata or {},
+    )
+    logger.info(
+        "[%s] user=%s ip=%s platform=%s | %s",
+        action,
+        getattr(user, "email", "?"),
+        ip,
+        getattr(platform, "platform_id", "?"),
+        description,
+    )
+ 
+ 
+def _parse_decimal(raw) -> Decimal | None:
+    """Return Decimal or None — never raises."""
+    try:
+        return Decimal(str(raw).strip())
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+ 
+ 
+# =============================================================================
+# deposit_pin
+# =============================================================================
+ 
 @csrf_exempt
+@xframe_options_exempt
 def deposit_pin(request):
-    """Deposit with PIN verification"""
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        pin = request.POST.get('pin')
-        amount = Decimal(request.POST.get('amount'))
-        phone_number = request.POST.get('phone_number')
-        platform_id = request.POST.get('platform_id')
-        
-        # Verify PIN
-        try:
-            user = Users.objects.get(email=email, role__in=['buyer', 'seller'])
-        except Users.DoesNotExist:
-            return JsonResponse({'error': 'User not found'}, status=404)
-        
-        result = PINAuthenticator.verify_pin(user, pin)
-        if not result['valid']:
-            return JsonResponse({'error': result['error']}, status=401)
-        
-        # Duplicate protection
-        request_fingerprint = hashlib.md5(
-            f"{user.id}:{amount}:{phone_number}:{platform_id}".encode()
-        ).hexdigest()
-        
-        cache_key = f"deposit_request:{request_fingerprint}"
-        if cache.get(cache_key):
-            return JsonResponse({
-                'error': 'Please wait before submitting another deposit'
-            }, status=429)
-        
-        # Validation
-        if amount < 1000:
-            return JsonResponse({'error': 'Minimum deposit is 1,000 UGX'}, status=400)
-        
-        try:
-            platform = Platform.objects.get(platform_id=platform_id)
-            cache.set(cache_key, True, 10)
-            
-            from .payment_processor import process_deposit
-            result = process_deposit(
-                user=user,
-                platform=platform,
-                amount=amount,
-                phone_number=phone_number
+    """
+    POST /deposit-pin/
+    Collect money from the user's mobile-money account and credit their
+    wallet's FREE balance (balance += amount; reserved_balance unchanged).
+ 
+    Form fields
+    -----------
+    email        - account email
+    pin          - 4-digit wallet PIN
+    amount       - UGX integer, min 1 000
+    phone_number - MSISDN e.g. 256700000000
+    platform_id  - Platform.platform_id
+ 
+    Success response (HTTP 200)
+    ---------------------------
+    {
+        success:          true,
+        transaction_id:   "<uuid>",
+        reference_id:     "<gateway ref>",
+        new_balance:      "<Decimal str>",
+        new_free_balance: "<Decimal str>",
+        next_action:      "<human string>"
+    }
+ 
+    Wallet update (inside select_for_update + atomic, AFTER gateway confirms)
+    --------------------------------------------------------------------------
+        wallet.balance          += amount
+        wallet.reserved_balance  -- UNCHANGED
+        wallet.free_balance      += amount   (property: balance - reserved)
+    """
+    # GET: render the template
+    if request.method == "GET":
+        return render(request, "deposit_pin.html", {
+            "email":     request.GET.get("email", ""),
+            "platforms": Platform.objects.filter(is_active=True),
+        })
+ 
+    # -- parse ------------------------------------------------------------
+    email       = (request.POST.get("email")        or "").strip()
+    pin         = (request.POST.get("pin")           or "").strip()
+    phone       = (request.POST.get("phone_number")  or "").strip()
+    platform_id = (request.POST.get("platform_id")   or "").strip()
+    amount      = _parse_decimal(request.POST.get("amount"))
+ 
+    # -- field validation -------------------------------------------------
+    if not all([email, pin, phone, platform_id]):
+        return JsonResponse(
+            {"error": "email, pin, phone_number, and platform_id are required"},
+            status=400,
+        )
+    if amount is None or amount <= 0:
+        return JsonResponse({"error": "Invalid amount"}, status=400)
+    if amount < _DEPOSIT_MIN_UGX:
+        return JsonResponse(
+            {"error": f"Minimum deposit is {int(_DEPOSIT_MIN_UGX):,} UGX"},
+            status=400,
+        )
+ 
+    # -- resolve user -----------------------------------------------------
+    try:
+        user = Users.objects.get(email=email, role__in=["buyer", "seller"])
+    except Users.DoesNotExist:
+        return JsonResponse({"error": "Account not found"}, status=404)
+ 
+    # -- 1. PIN first, always ---------------------------------------------
+    pin_result = PINAuthenticator.verify_pin(user, pin)
+    if not pin_result["valid"]:
+        _log_activity(
+            user, "deposit",
+            f"PIN verification failed — deposit {amount} UGX attempted",
+            request=request,
+            metadata={"amount": str(amount), "phone": phone,
+                      "reason": pin_result.get("error")},
+        )
+        resp = {"error": pin_result["error"]}
+        if pin_result.get("attempts_remaining") is not None:
+            resp["attempts_remaining"] = pin_result["attempts_remaining"]
+        return JsonResponse(resp, status=401)
+ 
+    # -- 2. Idempotency guard ---------------------------------------------
+    idem_key = _idempotency_key("deposit", user.id, amount, phone, platform_id)
+    cached   = cache.get(idem_key)
+    if cached:
+        logger.info("Duplicate deposit suppressed — user=%s", email)
+        return JsonResponse(cached, status=200)
+ 
+    # -- 3. Resolve platform ----------------------------------------------
+    try:
+        platform = Platform.objects.get(platform_id=platform_id, is_active=True)
+    except Platform.DoesNotExist:
+        return JsonResponse({"error": "Invalid or inactive platform"}, status=400)
+ 
+    # -- 4. Gateway + atomic wallet credit --------------------------------
+    try:
+        from .payment_processor import PaymentProcessor
+ 
+        processor    = PaymentProcessor(
+            api_key=platform.mobile_money_api_key,
+            provider=platform.mobile_money_provider,
+        )
+        api_response = processor.request_collection(
+            phone_number=phone,
+            amount=float(amount),       # gateway boundary — float expected
+            description="Deposit to Fair Cashier",
+        )
+ 
+        if api_response["status"] != "success":
+            _log_activity(
+                user, "deposit",
+                f"Gateway rejected deposit {amount} UGX: {api_response.get('message')}",
+                request=request, platform=platform,
+                metadata={
+                    "amount":     str(amount), "phone": phone,
+                    "error":      api_response.get("message"),
+                    "error_code": api_response.get("error_code"),
+                },
             )
-            
-            if result['status'] == 'success':
-                cache.set(cache_key, True, 30)
-                logger.info(f"✅ Deposit: {email}, {amount} UGX")
-                
-                return JsonResponse({
-                    'success': True,
-                    'transaction_id': result['transaction_id'],
-                    'reference_id': result['reference_id'],
-                    'next_action': result['next_action']
-                })
-            else:
-                cache.delete(cache_key)
-                return JsonResponse({'error': result['message']}, status=400)
-                
-        except Platform.DoesNotExist:
-            return JsonResponse({'error': 'Invalid platform'}, status=400)
-        except Exception as e:
-            cache.delete(cache_key)
-            logger.error(f"❌ Deposit error: {str(e)}")
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    email = request.GET.get('email', '')
-    platforms = Platform.objects.filter(is_active=True)
-    return render(request, 'deposit_pin.html', {
-        'email': email,
-        'platforms': platforms
-    })
-
-
-# ============= CASHOUT (PIN-PROTECTED) =============
-
+            return JsonResponse(
+                {"error": api_response.get("message", "Deposit failed")},
+                status=400,
+            )
+ 
+        # Gateway approved.
+        # Credit the wallet inside a single select_for_update + atomic block.
+        # This serialises any concurrent deposit or cashout on this wallet row.
+        # NOTE: we do NOT call complete_pending_deposit() here — that helper
+        # runs its own internal atomic(), which would be a nested/separate
+        # transaction and would escape the lock we hold here.
+        with db_transaction.atomic():
+            wallet = Wallet.objects.select_for_update().get(user=user)
+ 
+            # Credit free balance.
+            # reserved_balance is NEVER touched by a plain deposit —
+            # free_balance (a computed property) therefore rises by exactly
+            # the deposited amount.
+            wallet.balance += amount
+            wallet.save(update_fields=["balance", "updated_at"])
+ 
+            txn = Transaction.objects.create(
+                platform=platform,
+                to_wallet=wallet,
+                amount=amount,
+                transaction_type="deposit",
+                status="completed",
+                mobile_money_reference=api_response.get("reference_id"),
+                description=(
+                    f"Deposit via {platform.get_mobile_money_provider_display()} "
+                    f"from {phone}"
+                ),
+            )
+ 
+            MobileMoneyTransaction.objects.create(
+                platform=platform,
+                transaction=txn,
+                operation_type="collection",
+                phone_number=phone,
+                amount=amount,
+                external_reference=api_response.get(
+                    "reference_id", str(txn.transaction_id)
+                ),
+                api_response=api_response,
+                status="successful",
+            )
+ 
+        # Refresh outside the lock so the response reflects the committed state.
+        wallet.refresh_from_db()
+ 
+        response_payload = {
+            "success":          True,
+            "transaction_id":   str(txn.transaction_id),
+            "reference_id":     api_response.get("reference_id"),
+            "new_balance":      str(wallet.balance),
+            "new_free_balance": str(wallet.free_balance),   # balance - reserved
+            "next_action":      api_response.get(
+                "next_action", "Funds added to your free balance"
+            ),
+        }
+ 
+        # Cache so an identical re-submission in the window returns this
+        # result without touching the DB.
+        cache.set(idem_key, response_payload, _IDEMPOTENCY_TTL_SECONDS)
+ 
+        _log_activity(
+            user, "deposit",
+            (
+                f"Deposit {amount} UGX completed — "
+                f"balance {wallet.balance} UGX, "
+                f"free {wallet.free_balance} UGX, "
+                f"reserved {wallet.reserved_balance} UGX"
+            ),
+            request=request, platform=platform,
+            metadata={
+                "amount":           str(amount),
+                "phone":            phone,
+                "transaction_id":   str(txn.transaction_id),
+                "reference_id":     api_response.get("reference_id"),
+                "new_balance":      str(wallet.balance),
+                "new_free_balance": str(wallet.free_balance),
+                "reserved_balance": str(wallet.reserved_balance),
+            },
+        )
+ 
+        return JsonResponse(response_payload, status=200)
+ 
+    except Exception as exc:
+        logger.exception("Unexpected error in deposit_pin — user=%s", email)
+        _log_activity(
+            user, "deposit",
+            f"Unexpected deposit error: {exc}",
+            request=request,
+            platform=locals().get("platform"),
+            metadata={"amount": str(amount), "error": str(exc)},
+        )
+        return JsonResponse(
+            {"error": "An unexpected error occurred. Please try again."},
+            status=500,
+        )
+ 
+ 
+# =============================================================================
+# cashout_pin
+# =============================================================================
+ 
 @csrf_exempt
+@xframe_options_exempt
 def cashout_pin(request):
-    """Cashout with PIN verification"""
-    if request.method == 'POST':
-        email = request.POST.get('email')
-        pin = request.POST.get('pin')
-        amount = Decimal(request.POST.get('amount'))
-        phone_number = request.POST.get('phone_number')
-        platform_id = request.POST.get('platform_id')
-        
-        # Verify PIN
-        try:
-            user = Users.objects.get(email=email, role__in=['buyer', 'seller'])
-        except Users.DoesNotExist:
-            return JsonResponse({'error': 'User not found'}, status=404)
-        
-        result = PINAuthenticator.verify_pin(user, pin)
-        if not result['valid']:
-            return JsonResponse({'error': result['error']}, status=401)
-        
-        wallet = user.wallet
-        
-        # Validation
-        if amount < 5000:
-            return JsonResponse({'error': 'Minimum cashout is 5,000 UGX'}, status=400)
-
-        # Use free_balance — sellers cannot cash out reserved/escrowed funds
-        if wallet.free_balance < amount:
-            return JsonResponse({
-                'error': 'Insufficient free balance',
-                'available':       str(wallet.free_balance),
-                'total_balance':   str(wallet.balance),
-                'reserved_balance': str(wallet.reserved_balance),
-                'note': 'Some funds are reserved in escrow and cannot be withdrawn yet.'
-                        if wallet.reserved_balance > 0 else '',
-            }, status=400)
-        
-        # Duplicate protection
-        request_fingerprint = hashlib.md5(
-            f"cashout:{user.id}:{amount}:{phone_number}:{platform_id}".encode()
-        ).hexdigest()
-        
-        cache_key = f"cashout_request:{request_fingerprint}"
-        if cache.get(cache_key):
-            return JsonResponse({
-                'error': 'Please wait before submitting another cashout'
-            }, status=429)
-        
-        try:
-            platform = Platform.objects.get(platform_id=platform_id)
-            cache.set(cache_key, True, 10)
-            
-            from .payment_processor import process_cashout
-            result = process_cashout(
-                user=user,
-                platform=platform,
-                amount=amount,
-                phone_number=phone_number
+    """
+    POST /cashout-pin/
+    Disburse from the user's wallet FREE balance to their mobile-money account.
+ 
+    Form fields
+    -----------
+    email        - account email
+    pin          - 4-digit wallet PIN
+    amount       - UGX integer, min 5 000
+    phone_number - MSISDN e.g. 256700000000
+    platform_id  - Platform.platform_id
+ 
+    Success response (HTTP 200)
+    ---------------------------
+    {
+        success:          true,
+        transaction_id:   "<uuid>",
+        new_balance:      "<Decimal str>",
+        new_free_balance: "<Decimal str>"
+    }
+ 
+    Failure — insufficient free balance (HTTP 400)
+    -----------------------------------------------
+    {
+        error:            "Insufficient free balance",
+        available:        "<free_balance>",
+        total_balance:    "<balance>",
+        reserved_balance: "<reserved_balance>",
+        note:             "<human explanation if reserved > 0>"
+    }
+ 
+    Wallet update (inside select_for_update + atomic, AFTER gateway confirms)
+    --------------------------------------------------------------------------
+        wallet.balance          -= amount
+        wallet.reserved_balance  -- UNCHANGED
+        wallet.free_balance      -= amount   (property: balance - reserved)
+    """
+    # GET: render the template
+    if request.method == "GET":
+        return render(request, "cashout_pin.html", {
+            "email":     request.GET.get("email", ""),
+            "platforms": Platform.objects.filter(is_active=True),
+        })
+ 
+    # -- parse ------------------------------------------------------------
+    email       = (request.POST.get("email")        or "").strip()
+    pin         = (request.POST.get("pin")           or "").strip()
+    phone       = (request.POST.get("phone_number")  or "").strip()
+    platform_id = (request.POST.get("platform_id")   or "").strip()
+    amount      = _parse_decimal(request.POST.get("amount"))
+ 
+    # -- field validation -------------------------------------------------
+    if not all([email, pin, phone, platform_id]):
+        return JsonResponse(
+            {"error": "email, pin, phone_number, and platform_id are required"},
+            status=400,
+        )
+    if amount is None or amount <= 0:
+        return JsonResponse({"error": "Invalid amount"}, status=400)
+    if amount < _CASHOUT_MIN_UGX:
+        return JsonResponse(
+            {"error": f"Minimum cashout is {int(_CASHOUT_MIN_UGX):,} UGX"},
+            status=400,
+        )
+ 
+    # -- resolve user -----------------------------------------------------
+    try:
+        user = Users.objects.get(email=email, role__in=["buyer", "seller"])
+    except Users.DoesNotExist:
+        return JsonResponse({"error": "Account not found"}, status=404)
+ 
+    # -- 1. PIN first, always ---------------------------------------------
+    pin_result = PINAuthenticator.verify_pin(user, pin)
+    if not pin_result["valid"]:
+        _log_activity(
+            user, "cashout",
+            f"PIN verification failed — cashout {amount} UGX attempted",
+            request=request,
+            metadata={"amount": str(amount), "phone": phone,
+                      "reason": pin_result.get("error")},
+        )
+        resp = {"error": pin_result["error"]}
+        if pin_result.get("attempts_remaining") is not None:
+            resp["attempts_remaining"] = pin_result["attempts_remaining"]
+        return JsonResponse(resp, status=401)
+ 
+    # -- 2. Idempotency guard ---------------------------------------------
+    idem_key = _idempotency_key("cashout", user.id, amount, phone, platform_id)
+    cached   = cache.get(idem_key)
+    if cached:
+        logger.info("Duplicate cashout suppressed — user=%s", email)
+        return JsonResponse(cached, status=200)
+ 
+    # -- 3. Fast pre-flight free-balance check (no lock yet) --------------
+    # Avoids a gateway round-trip for obviously insufficient requests.
+    # A second locked re-check happens after the gateway call.
+    snapshot = user.wallet
+    if snapshot.free_balance < amount:
+        _log_activity(
+            user, "cashout",
+            f"Pre-flight failed: free {snapshot.free_balance} < requested {amount}",
+            request=request,
+            metadata={
+                "amount":           str(amount),
+                "free_balance":     str(snapshot.free_balance),
+                "total_balance":    str(snapshot.balance),
+                "reserved_balance": str(snapshot.reserved_balance),
+            },
+        )
+        return JsonResponse(
+            {
+                "error":            "Insufficient free balance",
+                "available":        str(snapshot.free_balance),
+                "total_balance":    str(snapshot.balance),
+                "reserved_balance": str(snapshot.reserved_balance),
+                "note": (
+                    "Some funds are reserved in escrow and cannot be withdrawn yet."
+                    if snapshot.reserved_balance > 0 else ""
+                ),
+            },
+            status=400,
+        )
+ 
+    # -- 4. Resolve platform ----------------------------------------------
+    try:
+        platform = Platform.objects.get(platform_id=platform_id, is_active=True)
+    except Platform.DoesNotExist:
+        return JsonResponse({"error": "Invalid or inactive platform"}, status=400)
+ 
+    # -- 5. Gateway call (outside lock — may be slow) ---------------------
+    try:
+        from .payment_processor import PaymentProcessor
+ 
+        processor    = PaymentProcessor(
+            api_key=platform.mobile_money_api_key,
+            provider=platform.mobile_money_provider,
+        )
+        api_response = processor.request_disbursement(
+            phone_number=phone,
+            amount=float(amount),
+            description="Withdrawal from Fair Cashier",
+        )
+ 
+        if api_response["status"] != "success":
+            _log_activity(
+                user, "cashout",
+                f"Gateway rejected cashout {amount} UGX: {api_response.get('message')}",
+                request=request, platform=platform,
+                metadata={
+                    "amount":     str(amount), "phone": phone,
+                    "error":      api_response.get("message"),
+                    "error_code": api_response.get("error_code"),
+                },
             )
-            
-            if result['status'] == 'success':
-                cache.set(cache_key, True, 30)
-                logger.info(f"✅ Cashout: {email}, {amount} UGX")
-                
-                return JsonResponse({
-                    'success': True,
-                    'transaction_id': result['transaction_id'],
-                    'new_balance': result['new_balance']
-                })
-            else:
-                cache.delete(cache_key)
-                return JsonResponse({'error': result['message']}, status=400)
-                
-        except Platform.DoesNotExist:
-            return JsonResponse({'error': 'Invalid platform'}, status=400)
-        except Exception as e:
-            cache.delete(cache_key)
-            logger.error(f"❌ Cashout error: {str(e)}")
-            return JsonResponse({'error': str(e)}, status=500)
-    
-    email = request.GET.get('email', '')
-    platforms = Platform.objects.filter(is_active=True)
-    return render(request, 'cashout_pin.html', {
-        'email': email,
-        'platforms': platforms
-    })
+            return JsonResponse(
+                {"error": api_response.get("message", "Cashout failed")},
+                status=400,
+            )
+ 
+        # -- 6. Gateway approved — debit wallet inside lock ---------------
+        # select_for_update() serialises concurrent cashout/deposit requests
+        # on this wallet row.  We re-check free_balance under the lock to
+        # catch the race where another request spent these funds between our
+        # pre-flight check and now.
+        with db_transaction.atomic():
+            wallet = Wallet.objects.select_for_update().get(user=user)
+ 
+            if wallet.free_balance < amount:
+                # Race condition caught.  The gateway disbursement already
+                # fired — in production this needs a reversal/reconciliation
+                # workflow.  We log a CRITICAL error for ops and return 400
+                # so the client knows something went wrong.
+                logger.error(
+                    "CRITICAL reconciliation needed: gateway disbursed %s UGX "
+                    "to %s for user=%s but wallet free_balance=%s at lock time.",
+                    amount, phone, email, wallet.free_balance,
+                )
+                _log_activity(
+                    user, "cashout",
+                    (
+                        f"RACE CONDITION: gateway disbursed {amount} UGX but "
+                        f"wallet free_balance={wallet.free_balance} under lock — "
+                        f"manual reconciliation required"
+                    ),
+                    request=request, platform=platform,
+                    metadata={
+                        "amount":           str(amount),
+                        "free_balance":     str(wallet.free_balance),
+                        "total_balance":    str(wallet.balance),
+                        "reserved_balance": str(wallet.reserved_balance),
+                        "phone":            phone,
+                        "gateway_ref":      api_response.get("reference_id"),
+                    },
+                )
+                return JsonResponse(
+                    {
+                        "error":            "Insufficient free balance",
+                        "available":        str(wallet.free_balance),
+                        "total_balance":    str(wallet.balance),
+                        "reserved_balance": str(wallet.reserved_balance),
+                    },
+                    status=400,
+                )
+ 
+            # Debit balance only.  reserved_balance is NEVER touched by a
+            # cashout — free_balance therefore drops by exactly amount.
+            wallet.balance -= amount
+            wallet.save(update_fields=["balance", "updated_at"])
+ 
+            txn = Transaction.objects.create(
+                platform=platform,
+                from_wallet=wallet,
+                amount=amount,
+                transaction_type="cashout",
+                status="completed",
+                mobile_money_reference=api_response.get("reference_id"),
+                description=(
+                    f"Cashout via {platform.get_mobile_money_provider_display()} "
+                    f"to {phone}"
+                ),
+            )
+ 
+            MobileMoneyTransaction.objects.create(
+                platform=platform,
+                transaction=txn,
+                operation_type="disbursement",
+                phone_number=phone,
+                amount=amount,
+                external_reference=api_response.get(
+                    "reference_id", str(txn.transaction_id)
+                ),
+                api_response=api_response,
+                status="successful",
+            )
+ 
+        wallet.refresh_from_db()
+ 
+        response_payload = {
+            "success":          True,
+            "transaction_id":   str(txn.transaction_id),
+            "new_balance":      str(wallet.balance),
+            "new_free_balance": str(wallet.free_balance),
+        }
+ 
+        cache.set(idem_key, response_payload, _IDEMPOTENCY_TTL_SECONDS)
+ 
+        _log_activity(
+            user, "cashout",
+            (
+                f"Cashout {amount} UGX completed to {phone} via "
+                f"{platform.platform_name} — "
+                f"balance {wallet.balance} UGX, "
+                f"free {wallet.free_balance} UGX, "
+                f"reserved {wallet.reserved_balance} UGX"
+            ),
+            request=request, platform=platform,
+            metadata={
+                "amount":           str(amount),
+                "phone":            phone,
+                "transaction_id":   str(txn.transaction_id),
+                "reference_id":     api_response.get("reference_id"),
+                "new_balance":      str(wallet.balance),
+                "new_free_balance": str(wallet.free_balance),
+                "reserved_balance": str(wallet.reserved_balance),
+            },
+        )
+ 
+        return JsonResponse(response_payload, status=200)
+ 
+    except Exception as exc:
+        logger.exception("Unexpected error in cashout_pin — user=%s", email)
+        _log_activity(
+            user, "cashout",
+            f"Unexpected cashout error: {exc}",
+            request=request,
+            platform=locals().get("platform"),
+            metadata={"amount": str(amount), "error": str(exc)},
+        )
+        return JsonResponse(
+            {"error": "An unexpected error occurred. Please try again."},
+            status=500,
+        )
+ 
+
+
+
+
+
+
+
 
 
 # ============= DEPOSIT AND PAY (SEAMLESS FLOW) =============
@@ -889,18 +1315,24 @@ def seller_request_cashout(request):
     pending_requests = []
     try:
         seller = Users.objects.get(email=email, role='seller')
-        wallet_balance = seller.wallet.balance
-        pending_requests = CashoutRequest.objects.filter(
+        wallet_balance    = seller.wallet.balance
+        free_balance      = seller.wallet.free_balance
+        reserved_balance  = seller.wallet.reserved_balance
+        pending_requests  = CashoutRequest.objects.filter(
             seller=seller,
             status__in=['pending', 'approved']
         ).order_by('-created_at')[:5]
     except Users.DoesNotExist:
-        wallet_balance = Decimal('0')
+        wallet_balance   = Decimal('0')
+        free_balance     = Decimal('0')
+        reserved_balance = Decimal('0')
 
     context = {
         'email': email,
         'platform_id': platform_id,
-        'wallet_balance': wallet_balance,
+        'wallet_balance':   wallet_balance,
+        'free_balance':     free_balance,
+        'reserved_balance': reserved_balance,
         'pending_requests': pending_requests,
     }
     return render(request, 'seller_request_cashout.html', context)

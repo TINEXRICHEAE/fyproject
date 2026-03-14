@@ -1,4 +1,5 @@
 <!-- templates/deposit_pin.html -->
+<!-- Works for both buyers (adding funds) and sellers (topping up for refund obligations). -->
 {% extends 'buyer_seller_base.html' %}
 
 {% block title %}Deposit - Fair Cashier{% endblock %}
@@ -11,21 +12,33 @@
             <span class="material-symbols-outlined text-black font-black text-2xl">arrow_downward</span>
         </div>
         <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Deposit Funds</h1>
-        <p class="text-sm text-white/70 font-bold uppercase mt-2">Mobile Money</p>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2" id="depositSubtitle">Mobile Money → Wallet</p>
+    </div>
+
+    <!-- Context banner: shown when admin directed a seller to deposit for refund -->
+    <div id="refundBanner" class="hidden border-2 border-primary bg-primary/10 p-4 mb-6">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-1">
+            ⚠️ Admin-Directed Refund Deposit
+        </p>
+        <p class="text-xs font-bold text-white/70">
+            The platform admin has asked you to deposit funds to cover a refund
+            for a disputed order item. Funds will be added to your free balance
+            and may be debited by admin to process the refund.
+        </p>
     </div>
 
     <!-- Deposit Form -->
     <form id="depositForm" class="space-y-6">
         <input type="hidden" name="email" value="{{ email }}"/>
-        
+
         <!-- Amount -->
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Amount (UGX)
             </label>
-            <input 
-                type="number" 
-                id="amount" 
+            <input
+                type="number"
+                id="amount"
                 name="amount"
                 min="1000"
                 step="100"
@@ -41,14 +54,15 @@
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Mobile Money Number
             </label>
-            <input 
-                type="tel" 
-                id="phone_number" 
+            <input
+                type="tel"
+                id="phone_number"
                 name="phone_number"
                 placeholder="256700000000"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 required
             />
+            <p class="text-xs font-bold text-white/50 mt-1">Format: 256XXXXXXXXX</p>
         </div>
 
         <!-- Platform Selection -->
@@ -56,8 +70,8 @@
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Provider
             </label>
-            <select 
-                id="platform_id" 
+            <select
+                id="platform_id"
                 name="platform_id"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 required
@@ -76,10 +90,10 @@
                 Enter PIN to Confirm
             </label>
             <div class="flex gap-2 justify-center mb-4">
-                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
-                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
             </div>
             <input type="hidden" id="pin" name="pin"/>
         </div>
@@ -88,8 +102,8 @@
         <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
 
         <!-- Submit Button -->
-        <button 
-            type="submit" 
+        <button
+            type="submit"
             id="submitBtn"
             class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
         >
@@ -103,8 +117,8 @@
         <ol class="text-xs font-bold text-white/70 space-y-2">
             <li>1. Enter amount and phone number</li>
             <li>2. Confirm with your PIN</li>
-            <li>3. Approve on your phone</li>
-            <li>4. Funds added instantly</li>
+            <li>3. Approve the prompt on your phone</li>
+            <li>4. Funds added to your free (withdrawable) balance instantly</li>
         </ol>
     </div>
 
@@ -119,87 +133,74 @@
 
 {% block scripts %}
 <script>
+// Show refund banner + adjusted subtitle if ?mode=refund
+const params = new URLSearchParams(window.location.search);
+if (params.get('mode') === 'refund') {
+    document.getElementById('refundBanner').classList.remove('hidden');
+    document.getElementById('depositSubtitle').textContent = 'Deposit for Refund Obligation';
+}
+
 // PIN input auto-focus
 document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
-    input.addEventListener('input', function(e) {
-        if (this.value && index < inputs.length - 1) {
-            inputs[index + 1].focus();
-        }
+    input.addEventListener('input', function () {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
     });
-    
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !this.value && index > 0) {
-            inputs[index - 1].focus();
-        }
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) inputs[index - 1].focus();
+    });
+    input.addEventListener('keypress', function (e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
     });
 });
 
-document.getElementById('depositForm').addEventListener('submit', async function(e) {
+document.getElementById('depositForm').addEventListener('submit', async function (e) {
     e.preventDefault();
-    
-    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
-        .map(id => document.getElementById(id).value)
-        .join('');
-    
-    if (pin.length !== 4) {
-        showStatus('Enter complete PIN', 'error');
-        return;
-    }
-    
+
+    const pin = ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id).value).join('');
+    if (pin.length !== 4) { showStatus('Enter complete PIN', 'error'); return; }
+
     document.getElementById('pin').value = pin;
-    
+
     const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Processing...';
-    
-    const formData = new FormData(this);
-    
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Processing…';
+
     try {
-        const response = await fetch(window.location.pathname, {
+        const response = await fetch('/deposit-pin/', {
             method: 'POST',
-            body: formData
+            body:   new FormData(this),
         });
-        
         const data = await response.json();
-        
+
         if (response.ok && data.success) {
             showStatus('Deposit initiated! Check your phone.', 'success');
             submitBtn.textContent = 'Success!';
-            submitBtn.classList.remove('bg-primary');
-            submitBtn.classList.add('bg-white');
-            
+            submitBtn.classList.replace('bg-primary', 'bg-white');
+
             setTimeout(() => {
                 window.location.href = `/wallet-pin/?email={{ email }}`;
             }, 3000);
         } else {
             showStatus(data.error || 'Deposit failed', 'error');
-            
-            // Clear PIN
-            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
-                document.getElementById(id).value = '';
-            });
+            ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
             document.getElementById('pin1').focus();
-            
-            submitBtn.disabled = false;
+            submitBtn.disabled    = false;
             submitBtn.textContent = 'Deposit Funds';
         }
-    } catch (error) {
+    } catch {
         showStatus('Network error', 'error');
-        submitBtn.disabled = false;
+        submitBtn.disabled    = false;
         submitBtn.textContent = 'Deposit Funds';
     }
 });
 
 function showStatus(message, type) {
-    const statusMsg = document.getElementById('statusMsg');
-    statusMsg.textContent = message;
-    statusMsg.classList.remove('hidden', 'bg-white', 'bg-primary', 'text-black', 'text-white');
-    
-    if (type === 'error') {
-        statusMsg.classList.add('bg-white', 'text-black');
-    } else {
-        statusMsg.classList.add('bg-primary', 'text-black');
-    }
+    const el = document.getElementById('statusMsg');
+    el.textContent = message;
+    el.classList.remove('hidden', 'bg-white', 'bg-primary');
+    el.classList.add(type === 'error' ? 'bg-white' : 'bg-primary');
+    el.style.color = 'black';
 }
 </script>
 {% endblock %}

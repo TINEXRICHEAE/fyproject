@@ -1,8 +1,8 @@
 <!-- templates/seller_request_cashout.html -->
 {% extends 'buyer_seller_base.html' %}
-
+ 
 {% block title %}Request Cashout - Fair Cashier{% endblock %}
-
+ 
 {% block content %}
 <div class="w-full max-w-md">
     <!-- Header -->
@@ -13,15 +13,45 @@
         <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Request Cashout</h1>
         <p class="text-sm text-white/70 font-bold uppercase mt-2">Submit for admin review</p>
     </div>
-
+ 
     <!-- Balance Display -->
-    <div class="border-2 border-primary bg-primary p-4 mb-6">
-        <div class="flex justify-between items-center">
-            <span class="text-xs font-black uppercase text-black/70">Available Balance</span>
-            <span class="text-xl font-black text-black" id="walletBalance">{{ wallet_balance|floatformat:0 }} UGX</span>
+    <div class="border-2 border-white mb-6">
+ 
+        <!-- Free (withdrawable) — primary call-out -->
+        <div class="bg-primary p-4 border-b-2 border-white">
+            <div class="flex justify-between items-center">
+                <div>
+                    <span class="text-xs font-black uppercase text-black/70 block">Free / Withdrawable</span>
+                    <span class="text-2xs font-bold text-black/50">Available for cashout</span>
+                </div>
+                <span class="text-2xl font-black text-black" id="freeBalanceDisplay">
+                    {{ free_balance|floatformat:0 }} UGX
+                </span>
+            </div>
         </div>
+ 
+        <!-- Total & Reserved — secondary info -->
+        <div class="grid grid-cols-2 divide-x-2 divide-white/20">
+            <div class="p-3 text-center">
+                <p class="text-xs font-black uppercase text-white/50 mb-0.5">Total Balance</p>
+                <p class="text-sm font-black text-white">{{ wallet_balance|floatformat:0 }} UGX</p>
+            </div>
+            <div class="p-3 text-center">
+                <p class="text-xs font-black uppercase text-white/50 mb-0.5">Reserved / Escrow</p>
+                <p class="text-sm font-black text-white/60">{{ reserved_balance|floatformat:0 }} UGX</p>
+            </div>
+        </div>
+ 
+        {% if reserved_balance > 0 %}
+        <div class="border-t border-white/20 px-4 py-2 bg-white/5">
+            <p class="text-xs font-bold text-white/50 text-center">
+                🔒 {{ reserved_balance|floatformat:0 }} UGX is held in escrow
+                and will be released when buyers confirm delivery.
+            </p>
+        </div>
+        {% endif %}
     </div>
-
+ 
     {% if pending_requests %}
     <!-- Pending Requests -->
     <div class="border-2 border-white mb-6">
@@ -35,7 +65,7 @@
                     <p class="text-xs font-black text-white">{{ req.amount|floatformat:0 }} UGX</p>
                     <p class="text-xs font-bold text-white/50">{{ req.get_payment_method_display }}</p>
                 </div>
-                <span class="text-xs font-black uppercase 
+                <span class="text-xs font-black uppercase
                     {% if req.status == 'pending' %}text-white
                     {% elif req.status == 'approved' %}text-primary{% endif %}">
                     {{ req.get_status_display }}
@@ -45,32 +75,35 @@
         </div>
     </div>
     {% endif %}
-
+ 
     <!-- Cashout Request Form -->
     <form id="cashoutRequestForm" class="space-y-6">
         <input type="hidden" name="email" value="{{ email }}"/>
         <input type="hidden" name="platform_id" value="{{ platform_id }}"/>
-
+ 
         <!-- Amount -->
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Amount (UGX)
             </label>
-            <input 
+            <input
                 type="number" id="amount" name="amount"
                 min="5000" step="100" placeholder="Enter amount"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 required
             />
-            <p class="text-xs font-bold text-white/50 mt-2">Minimum: 5,000 UGX</p>
+            <p class="text-xs font-bold text-white/50 mt-1">
+                Minimum 5,000 UGX · Max withdrawable:
+                <span class="text-primary">{{ free_balance|floatformat:0 }} UGX</span>
+            </p>
         </div>
-
+ 
         <!-- Payment Method -->
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Payment Method
             </label>
-            <select 
+            <select
                 id="payment_method" name="payment_method"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 required
@@ -81,14 +114,14 @@
                 <option value="bank_transfer">Bank Transfer</option>
             </select>
         </div>
-
-        <!-- Mobile Money Fields (shown for MTN/Airtel) -->
+ 
+        <!-- Mobile Money Fields -->
         <div id="mobileMoneyFields" class="hidden space-y-4">
             <div>
                 <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                     Mobile Money Number
                 </label>
-                <input 
+                <input
                     type="tel" id="phone_number" name="phone_number"
                     placeholder="256700000000"
                     class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
@@ -99,21 +132,21 @@
                 <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                     Recipient Name
                 </label>
-                <input 
+                <input
                     type="text" id="recipient_name" name="recipient_name"
                     placeholder="Full name on mobile money account"
                     class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 />
             </div>
         </div>
-
-        <!-- Bank Transfer Fields (shown for bank) -->
+ 
+        <!-- Bank Transfer Fields -->
         <div id="bankFields" class="hidden space-y-4">
             <div>
                 <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                     Bank Name
                 </label>
-                <select 
+                <select
                     id="bank_name" name="bank_name"
                     class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 >
@@ -136,7 +169,7 @@
                 <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                     Account Number
                 </label>
-                <input 
+                <input
                     type="text" id="account_number" name="account_number"
                     placeholder="Bank account number"
                     class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
@@ -146,26 +179,26 @@
                 <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                     Account Name
                 </label>
-                <input 
+                <input
                     type="text" id="account_name" name="account_name"
                     placeholder="Full name on bank account"
                     class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
                 />
             </div>
         </div>
-
+ 
         <!-- Optional Note -->
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
                 Note (Optional)
             </label>
-            <input 
+            <input
                 type="text" id="seller_note" name="seller_note"
                 placeholder="Any additional info for admin"
                 class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
             />
         </div>
-
+ 
         <!-- PIN Entry -->
         <div>
             <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
@@ -179,19 +212,19 @@
             </div>
             <input type="hidden" id="pin" name="pin"/>
         </div>
-
+ 
         <!-- Status Message -->
         <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
-
+ 
         <!-- Submit Button -->
-        <button 
+        <button
             type="submit" id="submitBtn"
             class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
         >
             Submit Cashout Request
         </button>
     </form>
-
+ 
     <!-- Info -->
     <div class="border-2 border-white bg-white p-4 mt-6">
         <p class="text-xs font-black uppercase tracking-widest text-black mb-2">How it works</p>
@@ -202,7 +235,7 @@
             <li>4. Amount deducted from your wallet</li>
         </ul>
     </div>
-
+ 
     <!-- Back Link -->
     <div class="text-center mt-6">
         <a href="/payment/seller-dashboard/?email={{ email }}" class="text-xs font-bold text-primary underline decoration-2 uppercase">
@@ -211,122 +244,113 @@
     </div>
 </div>
 {% endblock %}
-
+ 
 {% block scripts %}
 <script>
-const WALLET_BALANCE = parseFloat('{{ wallet_balance }}') || 0;
-
+// Validate against FREE balance — reserved/escrowed funds cannot be withdrawn
+const FREE_BALANCE     = parseFloat('{{ free_balance|floatformat:2 }}')     || 0;
+const RESERVED_BALANCE = parseFloat('{{ reserved_balance|floatformat:2 }}') || 0;
+ 
 // Toggle payment method fields
-document.getElementById('payment_method').addEventListener('change', function() {
-    const mobileFields = document.getElementById('mobileMoneyFields');
-    const bankFields = document.getElementById('bankFields');
-    
-    mobileFields.classList.add('hidden');
-    bankFields.classList.add('hidden');
-    
+document.getElementById('payment_method').addEventListener('change', function () {
+    document.getElementById('mobileMoneyFields').classList.add('hidden');
+    document.getElementById('bankFields').classList.add('hidden');
     if (this.value === 'mtn_mobile_money' || this.value === 'airtel_mobile_money') {
-        mobileFields.classList.remove('hidden');
+        document.getElementById('mobileMoneyFields').classList.remove('hidden');
     } else if (this.value === 'bank_transfer') {
-        bankFields.classList.remove('hidden');
+        document.getElementById('bankFields').classList.remove('hidden');
     }
 });
-
+ 
 // PIN input auto-focus
 document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
-    input.addEventListener('input', function(e) {
+    input.addEventListener('input', function () {
         this.value = this.value.replace(/[^0-9]/g, '');
-        if (this.value && index < inputs.length - 1) {
-            inputs[index + 1].focus();
-        }
+        if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
     });
-    input.addEventListener('keydown', function(e) {
-        if (e.key === 'Backspace' && !this.value && index > 0) {
-            inputs[index - 1].focus();
-        }
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) inputs[index - 1].focus();
     });
-    input.addEventListener('keypress', function(e) {
+    input.addEventListener('keypress', function (e) {
         if (!/[0-9]/.test(e.key)) e.preventDefault();
     });
 });
-
+ 
 // Form submission
-document.getElementById('cashoutRequestForm').addEventListener('submit', async function(e) {
+document.getElementById('cashoutRequestForm').addEventListener('submit', async function (e) {
     e.preventDefault();
-    
-    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+ 
+    const pin = ['pin1','pin2','pin3','pin4']
         .map(id => document.getElementById(id).value).join('');
-    
+ 
     if (pin.length !== 4) {
         showStatus('Enter complete PIN', 'error');
         return;
     }
-    
+ 
     const amount = parseFloat(document.getElementById('amount').value);
     if (!amount || amount < 5000) {
         showStatus('Minimum cashout is 5,000 UGX', 'error');
         return;
     }
-    
-    if (amount > WALLET_BALANCE) {
-        showStatus('Amount exceeds your balance', 'error');
+ 
+    // Guard against reserved balance
+    if (amount > FREE_BALANCE) {
+        if (RESERVED_BALANCE > 0) {
+            showStatus(
+                `Amount exceeds free balance. ` +
+                `${Math.round(RESERVED_BALANCE).toLocaleString()} UGX is reserved in escrow ` +
+                `and cannot be withdrawn yet.`,
+                'error'
+            );
+        } else {
+            showStatus('Amount exceeds your available balance', 'error');
+        }
         return;
     }
-    
+ 
     document.getElementById('pin').value = pin;
-    
+ 
     const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Submitting...';
-    
-    const formData = new FormData(this);
-    
+    submitBtn.disabled   = true;
+    submitBtn.textContent = 'Submitting…';
+ 
     try {
         const response = await fetch(window.location.href, {
             method: 'POST',
-            body: formData
+            body: new FormData(this),
         });
-        
         const data = await response.json();
-        
+ 
         if (response.ok && data.success) {
             showStatus('Request submitted! Awaiting admin review.', 'success');
             submitBtn.textContent = 'Submitted!';
-            submitBtn.classList.remove('bg-primary');
-            submitBtn.classList.add('bg-white');
-            
-            // Refresh page after delay to show pending request
+            submitBtn.classList.replace('bg-primary', 'bg-white');
             setTimeout(() => window.location.reload(), 2500);
         } else {
             showStatus(data.error || 'Request failed', 'error');
             clearPinInputs();
-            submitBtn.disabled = false;
+            submitBtn.disabled    = false;
             submitBtn.textContent = 'Submit Cashout Request';
         }
-    } catch (error) {
+    } catch {
         showStatus('Network error. Please try again.', 'error');
-        submitBtn.disabled = false;
+        submitBtn.disabled    = false;
         submitBtn.textContent = 'Submit Cashout Request';
     }
 });
-
+ 
 function clearPinInputs() {
-    ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
-        document.getElementById(id).value = '';
-    });
+    ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
     document.getElementById('pin1').focus();
 }
-
+ 
 function showStatus(message, type) {
     const el = document.getElementById('statusMsg');
     el.textContent = message;
     el.classList.remove('hidden', 'bg-white', 'bg-primary');
-    if (type === 'error') {
-        el.classList.add('bg-white');
-        el.style.color = 'black';
-    } else {
-        el.classList.add('bg-primary');
-        el.style.color = 'black';
-    }
+    el.classList.add(type === 'error' ? 'bg-white' : 'bg-primary');
+    el.style.color = 'black';
 }
 </script>
 {% endblock %}
