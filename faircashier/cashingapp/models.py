@@ -360,10 +360,18 @@ class PaymentRequestItem(models.Model):
             default=False,
             help_text="True when funds are transfered to sellers reserve balance, awaiting clearance"
         )
+    is_deposited = models.BooleanField(
+            default=False,
+            help_text="True when funds are transfered to sellers reserve balance, awaiting clearance"
+        )
     deposited_amount = models.DecimalField(
         max_digits=12, decimal_places=2,
         null=True, blank=True,
         help_text="Amount deposited to buyer wallet for this item"
+    )
+    deposited_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="When the escrow was made"
     )
     escrowed_amount = models.DecimalField(
         max_digits=12, decimal_places=2,
