@@ -31,7 +31,6 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-
 ALLOWED_HOSTS = [
     "127.0.0.1",
     "localhost",
@@ -40,15 +39,17 @@ ALLOWED_HOSTS = [
     "http://127.0.0.1:8000",  # E-commerce app
     "http://localhost:8000",   # E-commerce app
     "http://10.103.49.49:8000",  # E-commerce app
-    "http://0.0.0.0:8000/"
+    "http://0.0.0.0:8000/",
+    "edt-unfortunately-personality-singles.trycloudflare.com"
 ]
+
 
 # Add Security Headers manually for better control
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_BROWSER_XSS_FILTER = True
 
 # Content Security Policy
-CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:8000", 'http://localhost:1337']  # E-commerce domain
+CSP_FRAME_ANCESTORS = ["'self'", "http://localhost:8000", 'http://localhost:1337', 'https://administration-guards-behavior-pennsylvania.trycloudflare.com']  # E-commerce domain
 
 # CORS
 CORS_ALLOWED_ORIGINS = [
@@ -56,6 +57,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:8000",
     'http://127.0.0.1:1337', 
     'http://localhost:1337',
+    'https://edt-unfortunately-personality-singles.trycloudflare.com'
 ]
 
 CORS_ALLOW_CREDENTIALS = True
@@ -78,6 +80,7 @@ CSRF_TRUSTED_ORIGINS = ['http://127.0.0.1:8000',
                         'http://localhost:8001',
                         'http://127.0.0.1:1337', 
                         'http://localhost:1337',
+                        'https://edt-unfortunately-personality-singles.trycloudflare.com'
                         ]
 
 
@@ -114,6 +117,24 @@ SHOPPING_APP_INTERNAL_SECRET = os.getenv('SHOPPING_APP_INTERNAL_SECRET', '')
 CONSUMER_KEY = os.getenv('CONSUMER_KEY')
 CONSUMER_SECRET = os.getenv('CONSUMER_SECRET')
 
+# ── PesaPal v3 integration ────────────────────────────────────────────────────
+PESAPAL_ENVIRONMENT = os.getenv('PESAPAL_ENVIRONMENT', 'sandbox')
+PESAPAL_USE_MOCK    = os.getenv('PESAPAL_USE_MOCK', 'False').lower() == 'true'
+PESAPAL_IPN_URL     = os.getenv('PESAPAL_IPN_URL', '')
+PESAPAL_CALLBACK_URL = os.getenv('PESAPAL_CALLBACK_URL', '')
+PESAPAL_BRANCH      = os.getenv('PESAPAL_BRANCH', 'Fair Cashier')
+
+# Cloudflare tunnel must be added to ALLOWED_HOSTS and CSRF_TRUSTED_ORIGINS
+# when using a quick tunnel during development.  Extract the hostname from
+# PESAPAL_IPN_URL automatically:
+import urllib.parse as _urlparse
+_tunnel_host = _urlparse.urlparse(PESAPAL_IPN_URL).hostname or ''
+if _tunnel_host and _tunnel_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_tunnel_host)
+if _tunnel_host:
+    _tunnel_origin = f'https://{_tunnel_host}'
+    if _tunnel_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_tunnel_origin)
 
 # Application definition
 

@@ -1,0 +1,282 @@
+<!-- templates/pin_setup.html (ENHANCED) -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Set Up PIN - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">account_balance_wallet</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Fair Cashier</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Create Your Account</p>
+    </div>
+
+    <!-- Form -->
+    <form id="pinSetupForm" class="space-y-6">
+        <!-- Email -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Email
+            </label>
+            <input 
+                type="email" 
+                id="email" 
+                name="email" 
+                value="{{ prefill_email }}"
+                {% if prefill_email %}readonly{% endif %}
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary {% if prefill_email %}opacity-70{% endif %}"
+                required
+            />
+        </div>
+
+        <!-- Phone (Optional) -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Phone Number (Optional)
+            </label>
+            <input 
+                type="tel" 
+                id="phone_number" 
+                name="phone_number"
+                placeholder="256700000000"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            />
+        </div>
+
+        <!-- Role -->
+        {% if prefill_role %}
+        <input type="hidden" id="role" name="role" value="{{ prefill_role }}"/>
+        {% else %}
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Account Type
+            </label>
+            <select
+                id="role"
+                name="role"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            >
+                <option value="buyer">Buyer</option>
+                <option value="seller">Seller</option>
+            </select>
+        </div>
+        {% endif %}
+
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Create 4-Digit PIN
+            </label>
+            <div class="flex gap-2 justify-center mb-2">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+            </div>
+            <p class="text-xs font-bold text-white/50 text-center">Avoid: 0000, 1111, 1234</p>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Confirm PIN -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Confirm PIN
+            </label>
+            <div class="flex gap-2 justify-center">
+                <input type="password" maxlength="1" class="pin-input" id="confirm1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="confirm2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="confirm3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="confirm4" autocomplete="off" inputmode="numeric"/>
+            </div>
+            <input type="hidden" id="confirm_pin" name="confirm_pin"/>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Create Account
+        </button>
+    </form>
+
+    <!-- Login Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <p class="text-xs font-bold text-white/70 uppercase">
+            Already have an account?
+            <a href="/pin-login/?email={{ prefill_email }}&return={{ return_url }}" class="text-primary underline decoration-2">Login Here</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RETURN_URL = '{{ return_url }}';
+const IS_IFRAME = window.self !== window.top;
+
+console.log('📝 PIN Setup Page');
+console.log('Return URL:', RETURN_URL);
+console.log('Is in iframe:', IS_IFRAME);
+
+// PIN Input Auto-Focus with numeric validation
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    // Only allow numbers
+    input.addEventListener('input', function(e) {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+    
+    // Prevent non-numeric input
+    input.addEventListener('keypress', function(e) {
+        if (!/[0-9]/.test(e.key)) {
+            e.preventDefault();
+        }
+    });
+});
+
+// Focus first input
+document.getElementById('pin1').focus();
+
+// Form Submission
+document.getElementById('pinSetupForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    // Collect PIN
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    const confirmPin = ['confirm1', 'confirm2', 'confirm3', 'confirm4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    // Validate
+    if (pin.length !== 4) {
+        showError('Please enter complete 4-digit PIN');
+        document.getElementById('pin1').focus();
+        return;
+    }
+    
+    if (confirmPin.length !== 4) {
+        showError('Please confirm your PIN');
+        document.getElementById('confirm1').focus();
+        return;
+    }
+    
+    if (pin !== confirmPin) {
+        showError('PINs do not match');
+        // Clear confirm PIN
+        ['confirm1', 'confirm2', 'confirm3', 'confirm4'].forEach(id => {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('confirm1').focus();
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    document.getElementById('confirm_pin').value = confirmPin;
+    
+    // Submit
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(window.location.pathname + window.location.search, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            console.log('✅ Account created successfully');
+            console.log('Redirect URL:', data.redirect_url);
+            
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            // Redirect after short delay
+            setTimeout(() => {
+                if (IS_IFRAME && RETURN_URL.includes('/payment/')) {
+                    // In iframe and payment flow - try to update parent
+                    console.log('📤 Notifying parent of account creation');
+                    try {
+                        window.parent.postMessage({
+                            type: 'account_created',
+                            email: formData.get('email')
+                        }, '*');
+                    } catch (e) {
+                        console.error('Failed to notify parent:', e);
+                    }
+                }
+                
+                // Navigate to redirect URL
+                console.log('🔄 Redirecting to:', data.redirect_url);
+                window.location.href = data.redirect_url;
+            }, 500);
+        } else {
+            console.error('❌ Registration failed:', data.error);
+            showError(data.error || 'Registration failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Account';
+            
+            // Clear PINs on error
+            ['pin1', 'pin2', 'pin3', 'pin4', 'confirm1', 'confirm2', 'confirm3', 'confirm4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+        }
+    } catch (error) {
+        console.error('❌ Network error:', error);
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Account';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+        errorMsg.classList.add('hidden');
+    }, 5000);
+}
+
+// Notify parent that page is ready
+if (IS_IFRAME) {
+    window.addEventListener('load', function() {
+        try {
+            window.parent.postMessage({
+                type: 'pin_setup_ready'
+            }, '*');
+        } catch (e) {
+            console.error('Failed to notify parent:', e);
+        }
+    });
+}
+</script>
+{% endblock %}

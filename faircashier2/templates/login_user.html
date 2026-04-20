@@ -1,0 +1,75 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Fair Cashier</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/login_user.css' %}">
+</head>
+<body>
+  <!-- Floating Shapes -->
+  <div class="floating-shape shape-1"></div>
+  <div class="floating-shape shape-2"></div>
+  <div class="floating-shape shape-3"></div>
+
+  <div class="login-container">
+    <!-- Brand Section -->
+    <div class="brand-section">
+      <div class="brand-icon">FC</div>
+      <h1>Welcome Back!</h1>
+      <p class="subtitle">Login to your Fair Cashier account to continue.</p>
+      {% if prefill_email %}
+      <p class="email-notice">Logging in as: <strong>{{ prefill_email }}</strong></p>
+      {% endif %}
+    </div>
+
+    <!-- Login Form -->
+    <form id="loginForm" method="post">
+      {% csrf_token %}
+
+      <!-- Email Field -->
+      <div class="form-group">
+        <label for="email">Email</label>
+        <div class="input-wrapper">
+          <input type="email" id="email" name="email" placeholder="Enter your email" 
+                 value="{{ prefill_email }}" {% if prefill_email %}readonly{% endif %} required>
+          <div class="input-glow"></div>
+        </div>
+        <span class="error-message" id="emailError"></span>
+      </div>
+
+      <!-- Password Field -->
+      <div class="form-group">
+        <label for="password">Password</label>
+        <div class="input-wrapper">
+          <input type="password" id="password" name="password" placeholder="Enter your password" required autofocus>
+          <div class="input-glow"></div>
+        </div>
+        <span class="error-message" id="passwordError"></span>
+      </div>
+
+      <!-- Submit Button -->
+      <button type="submit" class="btn" id="loginBtn">
+        <span class="btn-text">Login</span>
+      </button>
+    </form>
+
+    <!-- Messages Section -->
+    <div id="messageBox" class="message-box"></div>
+
+    <!-- Link to Registration Page -->
+    <p class="register-link">
+      Don't have an account? <a href="{% url 'register_user' %}{% if return_url %}?return={{ return_url }}{% endif %}">Register here</a>.<br>
+      OR Return <a href="{% url 'home' %}">← Home</a>
+    </p>
+  </div>
+
+  <script>
+    const returnUrl = '{{ return_url }}';
+    const prefillEmail = '{{ prefill_email }}';
+  </script>
+  <script src="{% static 'js/login_user.js' %}"></script>
+</body>
+</html>

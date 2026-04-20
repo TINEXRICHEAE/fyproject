@@ -1,0 +1,448 @@
+<!-- templates/cashout_pin.html -->
+<!-- Works for both buyers (withdrawing refunds / surplus) and sellers. -->
+<!-- Validates against free_balance (not total balance) so reserved/escrowed -->
+<!-- funds are never withdrawn. -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Cashout - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">arrow_upward</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Cashout Funds</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2" id="cashoutSubtitle">Wallet → Mobile Money</p>
+    </div>
+
+    <!-- Refund context banner -->
+    <div id="refundBanner" class="hidden border-2 border-primary bg-primary/10 p-4 mb-6">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-1">
+            💰 Refund Withdrawal
+        </p>
+        <p class="text-xs font-bold text-white/70">
+            A refund has been credited to your wallet. You can now withdraw it to your mobile money account.
+        </p>
+    </div>
+
+    <!-- Balance info (shown after a failed attempt or on prefetch) -->
+    <div id="balanceInfo" class="hidden border-2 border-white mb-6">
+        <div class="bg-primary p-3">
+            <div class="flex justify-between items-center">
+                <span class="text-xs font-black uppercase text-black/70">Free / Withdrawable</span>
+                <span class="text-xl font-black text-black" id="freeBalanceDisplay">—</span>
+            </div>
+        </div>
+        <div id="reservedRow" class="hidden px-4 py-2 border-t border-white/20 bg-white/5">
+            <p class="text-xs font-bold text-white/50 text-center">
+                🔒 <span id="reservedDisplay">0</span> UGX reserved — not withdrawable yet.
+            </p>
+        </div>
+    </div>
+
+    <!-- Status Message (always rendered, toggled visible) -->
+    <div id="statusMsg"
+         class="hidden border-2 p-3 text-xs font-black uppercase text-center mb-4"
+         role="alert"
+         aria-live="polite">
+    </div>
+
+    <!-- ── Inline confirmation panel (replaces browser confirm()) ── -->
+    <div id="confirmPanel" class="hidden border-2 border-primary bg-primary/10 p-5 mb-6">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-3 text-center">
+            ⚠️ Confirm Withdrawal
+        </p>
+        <p class="text-sm font-bold text-white text-center mb-1">
+            Send <span id="confirmAmount" class="text-primary">—</span> UGX
+        </p>
+        <p class="text-xs font-bold text-white/60 text-center mb-4">
+            to <span id="confirmPhone">—</span>
+        </p>
+        <p class="text-xs font-bold text-white/50 text-center mb-4">
+            This cannot be reversed once sent.
+        </p>
+        <div class="flex gap-3">
+            <button id="confirmYes"
+                    class="flex-1 bg-primary text-black border-2 border-primary py-3 text-xs font-black uppercase hover:bg-white transition-colors">
+                Yes, Send Funds
+            </button>
+            <button id="confirmNo"
+                    class="flex-1 bg-black text-white border-2 border-white py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <!-- Cashout Form -->
+    <form id="cashoutForm" class="space-y-6" novalidate>
+        <input type="hidden" name="email" value="{{ email }}"/>
+
+        <!-- Amount -->
+        <div>
+            <label for="amount" class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Amount (UGX)
+            </label>
+            <input
+                type="number"
+                id="amount"
+                name="amount"
+                min="5000"
+                step="100"
+                placeholder="Enter amount"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary focus:outline-none"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">Minimum: 5,000 UGX</p>
+        </div>
+
+        <!-- Phone Number -->
+        <div>
+            <label for="phone_number" class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Mobile Money Number
+            </label>
+            <input
+                type="tel"
+                id="phone_number"
+                name="phone_number"
+                placeholder="256700000000"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary focus:outline-none"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-1">Format: 256XXXXXXXXX</p>
+        </div>
+
+        <!-- Platform Selection -->
+        <div>
+            <label for="platform_id" class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Provider
+            </label>
+            <select
+                id="platform_id"
+                name="platform_id"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary focus:outline-none"
+                required
+            >
+                {% for platform in platforms %}
+                <option value="{{ platform.platform_id }}">
+                    {{ platform.get_mobile_money_provider_display }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-3 text-center">
+                Enter PIN to Confirm
+            </label>
+            <div class="flex gap-3 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input w-12 h-12 border-2 border-white bg-black text-white text-xl font-black text-center focus:border-primary focus:outline-none" id="pin1" autocomplete="off" inputmode="numeric" pattern="[0-9]"/>
+                <input type="password" maxlength="1" class="pin-input w-12 h-12 border-2 border-white bg-black text-white text-xl font-black text-center focus:border-primary focus:outline-none" id="pin2" autocomplete="off" inputmode="numeric" pattern="[0-9]"/>
+                <input type="password" maxlength="1" class="pin-input w-12 h-12 border-2 border-white bg-black text-white text-xl font-black text-center focus:border-primary focus:outline-none" id="pin3" autocomplete="off" inputmode="numeric" pattern="[0-9]"/>
+                <input type="password" maxlength="1" class="pin-input w-12 h-12 border-2 border-white bg-black text-white text-xl font-black text-center focus:border-primary focus:outline-none" id="pin4" autocomplete="off" inputmode="numeric" pattern="[0-9]"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <!-- Submit Button -->
+        <button
+            type="submit"
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors flex items-center justify-center gap-2"
+        >
+            <span id="submitBtnText">Cashout Funds</span>
+            <!-- Spinner (hidden until processing) -->
+            <svg id="submitSpinner" class="hidden animate-spin h-4 w-4 text-black" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+            </svg>
+        </button>
+    </form>
+
+    <!-- Warning -->
+    <div class="border-2 border-white bg-white p-4 mt-6">
+        <p class="text-xs font-black uppercase tracking-widest text-black mb-2">⚠️ Important</p>
+        <ul class="text-xs font-bold text-black/70 space-y-2">
+            <li>• Only free (non-reserved) funds can be withdrawn</li>
+            <li>• Ensure the phone number is correct</li>
+            <li>• Funds sent to mobile money cannot be reversed</li>
+            <li>• Check your free balance before withdrawing</li>
+        </ul>
+    </div>
+
+    <!-- Back Link -->
+    <div class="text-center mt-6">
+        <a href="/wallet-pin/?email={{ email }}"
+           class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Wallet
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    'use strict';
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let freeBalance     = null;
+    let reservedBalance = null;
+    let pendingSubmit   = false;   // true while waiting for the user to confirm
+
+    // ── Mode banner ──────────────────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('mode') === 'refund') {
+        document.getElementById('refundBanner').classList.remove('hidden');
+        document.getElementById('cashoutSubtitle').textContent = 'Withdraw Your Refund';
+    }
+
+    // ── PIN inputs ───────────────────────────────────────────────────────────
+    const pinInputs = document.querySelectorAll('.pin-input');
+    pinInputs.forEach(function (input, index) {
+        input.addEventListener('input', function () {
+            // Strip non-digits
+            this.value = this.value.replace(/[^0-9]/g, '');
+            // Auto-advance
+            if (this.value && index < pinInputs.length - 1) {
+                pinInputs[index + 1].focus();
+            }
+        });
+        input.addEventListener('keydown', function (e) {
+            if (e.key === 'Backspace' && !this.value && index > 0) {
+                pinInputs[index - 1].focus();
+            }
+        });
+        input.addEventListener('keypress', function (e) {
+            if (!/[0-9]/.test(e.key)) e.preventDefault();
+        });
+    });
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function getPin() {
+        return ['pin1', 'pin2', 'pin3', 'pin4']
+            .map(function (id) { return document.getElementById(id).value; })
+            .join('');
+    }
+
+    function clearPinInputs() {
+        ['pin1', 'pin2', 'pin3', 'pin4'].forEach(function (id) {
+            document.getElementById(id).value = '';
+        });
+        document.getElementById('pin1').focus();
+    }
+
+    function showStatus(message, type) {
+        var el = document.getElementById('statusMsg');
+        el.textContent = message;
+        el.className = [
+            'border-2 p-3 text-xs font-black uppercase text-center mb-4',
+            type === 'error'
+                ? 'border-white bg-white text-black'
+                : 'border-primary bg-primary text-black'
+        ].join(' ');
+        el.classList.remove('hidden');
+        // Scroll into view so the user actually sees it
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function hideStatus() {
+        document.getElementById('statusMsg').classList.add('hidden');
+    }
+
+    function setButtonLoading(loading) {
+        var btn     = document.getElementById('submitBtn');
+        var txt     = document.getElementById('submitBtnText');
+        var spinner = document.getElementById('submitSpinner');
+        btn.disabled = loading;
+        if (loading) {
+            txt.textContent = 'Processing…';
+            spinner.classList.remove('hidden');
+        } else {
+            txt.textContent = 'Cashout Funds';
+            spinner.classList.add('hidden');
+        }
+    }
+
+    function setButtonSuccess() {
+        var btn = document.getElementById('submitBtn');
+        var txt = document.getElementById('submitBtnText');
+        document.getElementById('submitSpinner').classList.add('hidden');
+        txt.textContent = '✓ Success!';
+        btn.disabled = true;
+        btn.classList.replace('bg-primary', 'bg-white');
+    }
+
+    function showBalanceInfo(free, reserved) {
+        document.getElementById('balanceInfo').classList.remove('hidden');
+        document.getElementById('freeBalanceDisplay').textContent =
+            Math.round(free).toLocaleString() + ' UGX';
+        if (reserved > 0) {
+            document.getElementById('reservedDisplay').textContent =
+                Math.round(reserved).toLocaleString();
+            document.getElementById('reservedRow').classList.remove('hidden');
+        }
+    }
+
+    function clientSideBalanceCheck(amount) {
+        if (freeBalance === null) return true;   // unknown — let server decide
+        if (amount > freeBalance) {
+            var msg = 'Amount exceeds free balance (' +
+                Math.round(freeBalance).toLocaleString() + ' UGX withdrawable).';
+            if (reservedBalance && reservedBalance > 0) {
+                msg += ' ' + Math.round(reservedBalance).toLocaleString() +
+                    ' UGX is reserved and cannot be withdrawn yet.';
+            }
+            showStatus(msg, 'error');
+            return false;
+        }
+        return true;
+    }
+
+    // ── Inline confirmation panel ────────────────────────────────────────────
+    var confirmPanel = document.getElementById('confirmPanel');
+
+    function showConfirmPanel(amount, phone) {
+        document.getElementById('confirmAmount').textContent =
+            Math.round(amount).toLocaleString();
+        document.getElementById('confirmPhone').textContent = phone;
+        confirmPanel.classList.remove('hidden');
+        confirmPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function hideConfirmPanel() {
+        confirmPanel.classList.add('hidden');
+    }
+
+    document.getElementById('confirmNo').addEventListener('click', function () {
+        pendingSubmit = false;
+        hideConfirmPanel();
+        hideStatus();
+        clearPinInputs();
+        setButtonLoading(false);
+    });
+
+    document.getElementById('confirmYes').addEventListener('click', function () {
+        hideConfirmPanel();
+        executeSubmit();
+    });
+
+    // ── Form submit ──────────────────────────────────────────────────────────
+    document.getElementById('cashoutForm').addEventListener('submit', function (e) {
+        e.preventDefault();
+        hideStatus();
+
+        // Collect PIN
+        var pin = getPin();
+        if (pin.length !== 4) {
+            showStatus('Please enter your complete 4-digit PIN.', 'error');
+            return;
+        }
+
+        // Collect and validate amount
+        var rawAmount = document.getElementById('amount').value;
+        var amount    = parseFloat(rawAmount);
+        if (!rawAmount || isNaN(amount) || amount <= 0) {
+            showStatus('Please enter a valid amount.', 'error');
+            return;
+        }
+        if (amount < 5000) {
+            showStatus('Minimum cashout is 5,000 UGX.', 'error');
+            return;
+        }
+
+        // Client-side balance guard
+        if (!clientSideBalanceCheck(amount)) return;
+
+        // Phone
+        var phone = document.getElementById('phone_number').value.trim();
+        if (!phone) {
+            showStatus('Please enter your mobile money number.', 'error');
+            return;
+        }
+
+        // Show inline confirmation instead of browser confirm()
+        pendingSubmit = true;
+        showConfirmPanel(amount, phone);
+    });
+
+    // ── Actual network request (called after user clicks "Yes, Send Funds") ──
+    function executeSubmit() {
+        if (!pendingSubmit) return;
+        pendingSubmit = false;
+
+        // Write assembled PIN into hidden field
+        document.getElementById('pin').value = getPin();
+
+        setButtonLoading(true);
+        hideStatus();
+
+        var form = document.getElementById('cashoutForm');
+        var formData = new FormData(form);
+
+        fetch('/cashout-pin/', {
+            method: 'POST',
+            body:   formData,
+        })
+        .then(function (response) {
+            // Always parse JSON — errors also return JSON bodies
+            return response.json().then(function (data) {
+                return { ok: response.ok, status: response.status, data: data };
+            });
+        })
+        .then(function (result) {
+            var data = result.data;
+
+            if (result.ok && data.success) {
+                // ── Success ──────────────────────────────────────────────
+                setButtonSuccess();
+                showStatus('Cashout successful! Redirecting…', 'success');
+
+                // Update displayed balance if server returned it
+                if (data.new_free_balance !== undefined) {
+                    freeBalance = parseFloat(data.new_free_balance) || 0;
+                    reservedBalance = reservedBalance || 0;
+                    showBalanceInfo(freeBalance, reservedBalance);
+                }
+
+                setTimeout(function () {
+                    window.location.href = '/wallet-pin/?email={{ email }}';
+                }, 2000);
+
+            } else {
+                // ── Failure ───────────────────────────────────────────────
+                if (data.available !== undefined) {
+                    freeBalance     = parseFloat(data.available)        || 0;
+                    reservedBalance = parseFloat(data.reserved_balance) || 0;
+                    showBalanceInfo(freeBalance, reservedBalance);
+                }
+
+                var msg = data.error || 'Cashout failed. Please try again.';
+                if (data.available !== undefined) {
+                    msg = 'Insufficient free balance. Available: ' +
+                        Math.round(freeBalance).toLocaleString() + ' UGX.';
+                    if (reservedBalance > 0) {
+                        msg += ' ' + Math.round(reservedBalance).toLocaleString() +
+                            ' UGX is reserved in escrow.';
+                    }
+                }
+
+                showStatus(msg, 'error');
+                clearPinInputs();
+                setButtonLoading(false);
+            }
+        })
+        .catch(function (err) {
+            console.error('Cashout fetch error:', err);
+            showStatus('Network error — please check your connection and try again.', 'error');
+            clearPinInputs();
+            setButtonLoading(false);
+        });
+    }
+
+})();
+</script>
+{% endblock %}

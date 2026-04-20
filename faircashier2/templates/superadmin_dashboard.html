@@ -1,0 +1,192 @@
+<!-- templates/superadmin_dashboard.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Superadmin Dashboard - Fair Cashier</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                        "secondary-bg": "#FFFFFF",
+                    },
+                    fontFamily: {
+                        "display": ["Manrope", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "none": "0", "sm": "0", "DEFAULT": "0", "lg": "0", "xl": "0", "full": "0"
+                    },
+                },
+            },
+        }
+    </script>
+    
+    <style>
+        body {
+            font-family: 'Manrope', sans-serif;
+            background-color: #000000;
+            color: white;
+        }
+        * { box-shadow: none !important; text-shadow: none !important; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Header -->
+    <header class="border-b-2 border-white p-6">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-black font-black text-2xl">shield</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black uppercase tracking-tighter">Superadmin Dashboard</h1>
+                    <p class="text-xs font-bold text-white/70 uppercase">{{ user.email }}</p>
+                </div>
+            </div>
+            <a href="/logout/">
+                <button class="border-2 border-white px-6 py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    Logout
+                </button>
+            </a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-6">
+        <!-- System Stats -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8">
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Total Users</p>
+                <p class="text-3xl font-black text-white">{{ stats.total_users }}</p>
+                <div class="flex gap-2 mt-2 text-xs font-bold">
+                    <span class="text-primary">{{ stats.total_buyers }} B</span>
+                    <span class="text-white/50">{{ stats.total_sellers }} S</span>
+                    <span class="text-white/50">{{ stats.total_admins }} A</span>
+                </div>
+            </div>
+            
+            <div class="border-2 border-primary bg-primary p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-black/70 mb-2">Total Volume</p>
+                <p class="text-3xl font-black text-black">{{ stats.total_volume|floatformat:0 }}</p>
+                <p class="text-xs font-bold text-black/70 uppercase">UGX</p>
+            </div>
+            
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Platforms</p>
+                <p class="text-3xl font-black text-white">{{ stats.total_platforms }}</p>
+            </div>
+            
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Transactions</p>
+                <p class="text-3xl font-black text-primary">{{ stats.total_transactions }}</p>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="grid md:grid-cols-4 gap-6 mb-8">
+            <a href="/users/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">group</span>
+                    <p class="text-xs font-black uppercase">Manage Users</p>
+                </div>
+            </a>
+            <a href="/disputes/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">gavel</span>
+                    <p class="text-xs font-black uppercase">Disputes</p>
+                </div>
+            </a>
+            <a href="/transactions/" class="block">
+                <div class="border-2 border-white p-6 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-3xl mb-2">receipt_long</span>
+                    <p class="text-xs font-black uppercase">Transactions</p>
+                </div>
+            </a>
+            <a href="#" class="block">
+                <div class="border-2 border-primary bg-primary p-6 text-center hover:bg-white transition-colors">
+                    <span class="material-symbols-outlined text-black text-3xl mb-2">analytics</span>
+                    <p class="text-xs font-black uppercase text-black">Analytics</p>
+                </div>
+            </a>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-6">
+            <!-- Recent Users -->
+            <div class="border-2 border-white">
+                <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                    <h2 class="text-sm font-black uppercase text-black">Recent Users</h2>
+                    <span class="material-symbols-outlined text-black">person_add</span>
+                </div>
+                <div class="divide-y-2 divide-white/10">
+                    {% for user in recent_users %}
+                    <a href="/user/{{ user.id }}/" class="block p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ user.email }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ user.created_at|date:"M d, Y" }}</p>
+                            </div>
+                            <p class="text-xs font-black uppercase text-primary">{{ user.role }}</p>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Recent Platforms -->
+            <div class="border-2 border-white">
+                <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                    <h2 class="text-sm font-black uppercase text-black">Recent Platforms</h2>
+                    <span class="material-symbols-outlined text-black">business</span>
+                </div>
+                <div class="divide-y-2 divide-white/10">
+                    {% for platform in recent_platforms %}
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">{{ platform.platform_name }}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">{{ platform.domain }}</p>
+                            </div>
+                            <p class="text-xs font-black uppercase text-primary">{{ platform.admin.email }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="border-2 border-white mt-6">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h2 class="text-sm font-black uppercase text-black">Recent Transactions</h2>
+                <span class="material-symbols-outlined text-black">sync_alt</span>
+            </div>
+            <div class="divide-y-2 divide-white/10">
+                {% for tx in recent_transactions %}
+                <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="text-xs font-black uppercase">{{ tx.transaction_type }}</p>
+                            <p class="text-xs font-bold text-white/50 mt-1">{{ tx.created_at|date:"M d, Y H:i" }}</p>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-sm font-black text-primary">{{ tx.amount|floatformat:0 }} UGX</p>
+                            <p class="text-xs font-bold text-white/50 mt-1 uppercase">{{ tx.status }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </main>
+</body>
+</html>

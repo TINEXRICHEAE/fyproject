@@ -1,0 +1,91 @@
+{% extends 'buyer_seller_base.html' %}
+{% block title %}Payment {{ success|yesno:"Complete,Incomplete" }}{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+
+    <div class="border-2 {% if success %}border-primary bg-black{% else %}border-white bg-white{% endif %} p-6 mb-6">
+        <div class="flex items-center gap-4">
+            <span class="text-4xl">{{ success|yesno:"✅,❌" }}</span>
+            <div>
+                <h1 class="text-xl font-black {% if success %}text-primary{% else %}text-black{% endif %} uppercase">
+                    {{ success|yesno:"Payment Received,Payment Incomplete" }}
+                </h1>
+                <p class="text-sm {% if success %}text-white/70{% else %}text-black/70{% endif %} mt-1">
+                    {{ message }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    {% if success %}
+    <div class="border-2 border-white p-4 mb-5 space-y-2">
+        <p class="text-xs font-black uppercase tracking-widest text-white/50 mb-3">Transaction Details</p>
+        {% if amount %}
+        <div class="flex justify-between text-sm">
+            <span class="text-white/60">Amount Paid</span>
+            <span class="font-black text-primary">{{ amount }} {{ currency }}</span>
+        </div>
+        {% endif %}
+        {% if payment_method %}
+        <div class="flex justify-between text-sm">
+            <span class="text-white/60">Method</span>
+            <span class="font-black text-white">{{ payment_method }}</span>
+        </div>
+        {% endif %}
+        {% if confirmation_code %}
+        <div class="flex justify-between text-sm">
+            <span class="text-white/60">Confirmation</span>
+            <span class="font-black text-white font-mono text-xs">{{ confirmation_code }}</span>
+        </div>
+        {% endif %}
+        {% if order_tracking_id %}
+        <div class="flex justify-between text-sm">
+            <span class="text-white/60">Tracking ID</span>
+            <span class="font-black text-white/70 font-mono text-xs truncate max-w-48">{{ order_tracking_id }}</span>
+        </div>
+        {% endif %}
+    </div>
+    <p class="text-xs text-white/40 text-center mb-6">
+        Your wallet has been credited. Returning to your order…
+    </p>
+    {% else %}
+    <div class="border border-white/20 p-4 mb-6 text-sm text-white/60">
+        <p class="font-black text-white mb-2">Status: {{ pesapal_status|default:"Unknown" }}</p>
+        <p>If you approved the payment on your phone but see this message, please
+           wait a moment and try again. Reference:
+           <span class="font-mono text-primary">{{ merchant_reference|truncatechars:16 }}</span>
+        </p>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// This page loads inside the shared iframe slot in payment_iframe.html
+// after PesaPal redirects back to /pesapal/callback/.
+// We postMessage UP to payment_iframe.html which swaps the src back to
+// the Fair Cashier payment page so the buyer can complete the payment step.
+
+var SUCCESS        = {{ success|yesno:"true,false" }};
+var PESAPAL_STATUS = '{{ pesapal_status|default:"" }}';
+var CONFIRMATION   = '{{ confirmation_code|default:"" }}';
+var MERCHANT_REF   = '{{ merchant_reference|default:"" }}';
+
+function _notifyParent() {
+    var msg = SUCCESS
+        ? { type: 'pesapal_complete', confirmation: CONFIRMATION, merchant_reference: MERCHANT_REF }
+        : { type: 'pesapal_failed',   status: PESAPAL_STATUS,    merchant_reference: MERCHANT_REF };
+    try {
+        window.parent.postMessage(msg, '*');
+    } catch(e) {}
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    // Brief pause so the buyer sees the result before the frame swaps back.
+    setTimeout(_notifyParent, SUCCESS ? 1800 : 2500);
+});
+</script>
+{% endblock %}

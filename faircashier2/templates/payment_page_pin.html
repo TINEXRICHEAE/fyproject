@@ -1,0 +1,481 @@
+{% extends 'buyer_seller_base.html' %}
+{% block title %}Complete Payment{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-lg">
+
+    <!-- ════════════ HEADER ════════════════════════════════════════════════ -->
+    <div class="border-b-2 border-white pb-4 mb-6">
+        <div class="flex items-center justify-between">
+            <div>
+                <p class="text-xs font-black uppercase tracking-widest text-white/70">Order Total</p>
+                <h1 class="text-3xl font-black text-primary" id="grandTotalDisplay">
+                    {{ payment_request.total_amount|floatformat:0 }} {{ payment_request.currency }}
+                </h1>
+            </div>
+            <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                <span class="material-symbols-outlined text-black font-black text-2xl">lock</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════ WALLET BALANCE ════════════════════════════════════════ -->
+    <div class="border-2 border-white mb-5 p-3">
+        <div class="flex justify-between items-center">
+            <span class="text-xs font-black uppercase text-white/70">Wallet Balance</span>
+            <div class="text-right">
+                <div class="text-lg font-black text-white" id="walletBalanceDisplay">
+                    {{ wallet.balance|floatformat:0 }} {{ wallet.currency }}
+                </div>
+                <div class="text-xs text-white/50 mt-0.5">
+                    Free: <span id="walletFreeDisplay">{{ wallet.free_balance|floatformat:0 }}</span>
+                    {% if wallet.reserved_balance > 0 %}
+                    &nbsp;·&nbsp;Reserved:
+                    <span id="walletReservedDisplay">{{ wallet.reserved_balance|floatformat:0 }}</span>
+                    {% endif %}
+                    {{ wallet.currency }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════ PER-ITEM ACTION CARDS ═════════════════════════════════ -->
+    <div class="mb-5 space-y-4" id="itemActionCards">
+        {% for item in items %}
+        <div class="border-2 border-white item-card"
+             data-item-id="{{ item.item_id }}"
+             data-amount="{{ item.amount }}">
+            <div class="flex justify-between items-center p-3 bg-white/5">
+                <div>
+                    <p class="text-xs font-black uppercase text-white/50 tracking-widest">Seller</p>
+                    <p class="text-sm font-black text-white">{{ item.seller_email }}</p>
+                </div>
+                <p class="text-lg font-black text-primary">
+                    {{ item.amount|floatformat:0 }} {{ item.currency }}
+                </p>
+            </div>
+            {% if item.product_description %}
+            <div class="px-3 py-2 border-t border-white/10">
+                <p class="text-xs text-white/50">{{ item.product_description }}</p>
+            </div>
+            {% endif %}
+            <div class="p-3 border-t border-white/10">
+                <p class="text-xs font-black uppercase tracking-widest text-white/60 mb-2">How to pay</p>
+                <div class="flex gap-2">
+                    <button type="button"
+                        class="action-btn flex-1 py-3 text-xs font-black uppercase border-2 transition-colors border-white/30 text-white/50"
+                        data-action="pay" data-item-id="{{ item.item_id }}">
+                        <span class="block text-base mb-0.5">💳</span>Pay Now
+                    </button>
+                    <button type="button"
+                        class="action-btn flex-1 py-3 text-xs font-black uppercase border-2 transition-colors border-white/30 text-white/50"
+                        data-action="deposit" data-item-id="{{ item.item_id }}">
+                        <span class="block text-base mb-0.5">🔒</span>Deposit
+                    </button>
+                </div>
+                <div class="action-desc mt-2 text-xs text-white/50 hidden" data-item-id="{{ item.item_id }}"></div>
+                <div class="item-status mt-2 hidden" data-item-id="{{ item.item_id }}">
+                    <span class="inline-block px-2 py-1 text-xs font-black uppercase"></span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- ════════════ TOP-UP NOTICE ══════════════════════════════════════════ -->
+    <div id="topupNotice" class="border-2 border-primary bg-black p-4 mb-5 hidden">
+        <p class="text-xs font-black uppercase tracking-widest text-primary mb-3">⚡ Wallet Top-Up Required</p>
+        <div class="space-y-1 text-xs mb-4">
+            <div class="flex justify-between">
+                <span class="text-white/60">Order Total</span>
+                <span class="font-black text-white" id="orderTotalInNotice">—</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-white/60">Wallet Free Balance</span>
+                <span class="font-black text-white" id="freeBalanceInNotice">—</span>
+            </div>
+            <div class="flex justify-between border-t border-white/10 pt-1 mt-1">
+                <span class="text-white/60">Top-Up Needed</span>
+                <span class="font-black text-primary" id="topupAmount">—</span>
+            </div>
+        </div>
+        <label class="block text-xs font-black uppercase tracking-widest text-white mb-1">
+            Mobile Money Number
+        </label>
+        <input type="tel" id="phone_number" name="phone_number"
+            placeholder="256700000000"
+            class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary focus:outline-none"
+            autocomplete="tel"/>
+        <p class="text-xs text-white/40 mt-1">
+            You will receive a phone prompt to approve the top-up.
+        </p>
+    </div>
+
+    <!-- ════════════ ORDER SUMMARY ═════════════════════════════════════════ -->
+    <div id="orderSummary" class="hidden border border-white/10 p-3 mb-5">
+        <p class="text-xs font-black uppercase tracking-widest text-white/60 mb-2">Summary</p>
+        <div id="summaryRows" class="space-y-1 text-xs"></div>
+    </div>
+
+    <!-- ════════════ PIN ENTRY ══════════════════════════════════════════════ -->
+    <div class="mb-5" id="pinSection">
+        <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+            Enter PIN to Confirm
+        </label>
+        <div class="flex gap-2 justify-center">
+            <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+            <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+        </div>
+    </div>
+
+    <!-- ════════════ STATUS MESSAGE ════════════════════════════════════════ -->
+    <div id="statusMsg" class="hidden border-2 p-3 text-xs font-black uppercase text-center mb-4"></div>
+
+    <!-- ════════════ PROGRESS STEPS ════════════════════════════════════════ -->
+    <div id="progressSteps" class="hidden space-y-2 mb-4">
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white flex items-center justify-center text-xs font-black" id="s1Icon">1</div>
+            <span class="text-xs font-bold text-white/70" id="s1Text">Verifying &amp; topping up wallet…</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="s2Icon">2</div>
+            <span class="text-xs font-bold text-white/30" id="s2Text">Processing payments…</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="step-icon w-6 h-6 border-2 border-white/30 flex items-center justify-center text-xs font-black text-white/30" id="s3Icon">3</div>
+            <span class="text-xs font-bold text-white/30" id="s3Text">Reserving deposited funds…</span>
+        </div>
+    </div>
+
+    <!-- ════════════ SUBMIT BUTTON ══════════════════════════════════════════ -->
+    <button type="button" id="submitBtn"
+        class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled>
+        Select an action for each item
+    </button>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ─── Config ───────────────────────────────────────────────────────────────────
+const REQUEST_ID      = '{{ payment_request.request_id }}';
+const BUYER_EMAIL     = '{{ payment_request.buyer_email }}';
+const CURRENCY        = '{{ payment_request.currency }}';
+const WALLET_BALANCE  = parseFloat('{{ wallet.balance|floatformat:2 }}')          || 0;
+const WALLET_RESERVED = parseFloat('{{ wallet.reserved_balance|floatformat:2 }}') || 0;
+let   walletFree      = WALLET_BALANCE - WALLET_RESERVED;
+
+// ─── Item map ─────────────────────────────────────────────────────────────────
+const itemMap = {};
+document.querySelectorAll('.item-card').forEach(card => {
+    itemMap[card.dataset.itemId] = {
+        amount: parseFloat(card.dataset.amount) || 0,
+        action: null,
+    };
+});
+
+const DESCRIPTIONS = {
+    pay:     'Funds transfer immediately from your wallet to the seller.',
+    deposit: 'Funds are reserved inside your wallet — earmarked for this item. The seller can see the payment is secured.',
+};
+
+// ─── Action buttons ───────────────────────────────────────────────────────────
+document.querySelectorAll('.action-btn').forEach(btn => {
+    btn.addEventListener('click', function () {
+        const itemId = this.dataset.itemId;
+        const action = this.dataset.action;
+        document.querySelectorAll('.action-btn[data-item-id="' + itemId + '"]').forEach(b => {
+            b.classList.remove('bg-primary', 'text-black', 'border-primary');
+            b.classList.add('border-white/30', 'text-white/50');
+        });
+        this.classList.remove('border-white/30', 'text-white/50');
+        this.classList.add('bg-primary', 'text-black', 'border-primary');
+        itemMap[itemId].action = action;
+        const desc = document.querySelector('.action-desc[data-item-id="' + itemId + '"]');
+        if (desc) { desc.textContent = DESCRIPTIONS[action] || ''; desc.classList.remove('hidden'); }
+        recalculate();
+    });
+});
+
+// ─── Summary + button label ───────────────────────────────────────────────────
+function fmt(n) { return Math.round(n).toLocaleString() + ' ' + CURRENCY; }
+
+function recalculate() {
+    const items        = Object.values(itemMap);
+    const allSelected  = items.every(i => i.action !== null);
+    const totalAll     = items.reduce((s, i) => s + i.amount, 0);
+    const shortfall    = Math.max(0, totalAll - walletFree);
+    const payTotal     = items.filter(i => i.action === 'pay').reduce((s, i) => s + i.amount, 0);
+    const depositTotal = items.filter(i => i.action === 'deposit').reduce((s, i) => s + i.amount, 0);
+    const selectedLen  = items.filter(i => i.action !== null).length;
+
+    const notice = document.getElementById('topupNotice');
+    if (shortfall > 0) {
+        notice.classList.remove('hidden');
+        document.getElementById('orderTotalInNotice').textContent  = fmt(totalAll);
+        document.getElementById('freeBalanceInNotice').textContent = fmt(walletFree);
+        document.getElementById('topupAmount').textContent         = fmt(Math.ceil(shortfall));
+    } else { notice.classList.add('hidden'); }
+
+    const summaryEl = document.getElementById('orderSummary');
+    const rowsEl    = document.getElementById('summaryRows');
+    if (selectedLen > 0) {
+        summaryEl.classList.remove('hidden');
+        let html = '';
+        if (payTotal > 0)
+            html += '<div class="flex justify-between"><span class="text-white/60">💳 Paying to sellers</span><span class="font-black text-white">' + fmt(payTotal) + '</span></div>';
+        if (depositTotal > 0)
+            html += '<div class="flex justify-between"><span class="text-white/60">🔒 Reserving in wallet</span><span class="font-black text-primary">' + fmt(depositTotal) + '</span></div>';
+        if (shortfall > 0)
+            html += '<div class="flex justify-between border-t border-white/10 pt-1 mt-1"><span class="text-white/60">⚡ Top-up required</span><span class="font-black text-primary">' + fmt(Math.ceil(shortfall)) + '</span></div>';
+        rowsEl.innerHTML = html;
+    } else { summaryEl.classList.add('hidden'); }
+
+    const btn = document.getElementById('submitBtn');
+    if (!allSelected) {
+        btn.disabled    = true;
+        btn.textContent = 'Select an action for all ' + items.length + ' item' + (items.length !== 1 ? 's' : '');
+        return;
+    }
+    btn.disabled = false;
+    if (payTotal > 0 && depositTotal > 0)
+        btn.textContent = shortfall > 0 ? '⚡ Top Up, Pay & Reserve' : '💳 Pay & Reserve';
+    else if (payTotal > 0)
+        btn.textContent = shortfall > 0 ? '⚡ Top Up & Pay Now' : '💳 Pay Now';
+    else
+        btn.textContent = shortfall > 0 ? '⚡ Top Up & Reserve' : '🔒 Reserve in Wallet';
+}
+
+// ─── PIN inputs ───────────────────────────────────────────────────────────────
+document.querySelectorAll('.pin-input').forEach(function(input, idx, all) {
+    input.addEventListener('input', function () {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        if (this.value && idx < all.length - 1) all[idx + 1].focus();
+    });
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && idx > 0) all[idx - 1].focus();
+    });
+    input.addEventListener('keypress', function (e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+});
+document.getElementById('pin1') && document.getElementById('pin1').focus();
+
+function getPin() {
+    return ['pin1','pin2','pin3','pin4'].map(function(id) {
+        var e = document.getElementById(id); return e ? e.value : '';
+    }).join('');
+}
+function clearPin() {
+    ['pin1','pin2','pin3','pin4'].forEach(function(id) {
+        var e = document.getElementById(id); if (e) e.value = '';
+    });
+    document.getElementById('pin1') && document.getElementById('pin1').focus();
+}
+
+// ─── Step helpers ─────────────────────────────────────────────────────────────
+function setStep(n, state) {
+    var icon = document.getElementById('s' + n + 'Icon');
+    var text = document.getElementById('s' + n + 'Text');
+    if (!icon) return;
+    icon.className = 'step-icon w-6 h-6 border-2 flex items-center justify-center text-xs font-black ';
+    if (text) text.classList.remove('text-white/30', 'text-white', 'text-primary');
+    if (state === 'active')        { icon.className += 'border-white text-white';              if (text) text.classList.add('text-white'); }
+    else if (state === 'complete') { icon.className += 'border-primary bg-primary text-black'; icon.textContent = '✓'; if (text) text.classList.add('text-primary'); }
+    else                           { icon.className += 'border-white/30 text-white/30';        if (text) text.classList.add('text-white/30'); }
+}
+
+function showStatus(msg, type) {
+    var el = document.getElementById('statusMsg');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'border-2 p-3 text-xs font-black uppercase text-center mb-4 '
+        + (type === 'error' ? 'border-white bg-white text-black' : 'border-primary bg-primary text-black');
+    el.classList.remove('hidden');
+}
+
+function updateItemBadge(itemId, status, label) {
+    var wrap = document.querySelector('.item-status[data-item-id="' + itemId + '"]');
+    if (!wrap) return;
+    wrap.classList.remove('hidden');
+    var badge = wrap.querySelector('span');
+    var cls = { escrowed:'bg-primary text-black', deposited:'bg-black text-primary border border-primary', paid:'bg-primary text-black', failed:'bg-red-600 text-white' };
+    badge.className   = 'inline-block px-2 py-1 text-xs font-black uppercase ' + (cls[status] || '');
+    badge.textContent = label;
+}
+
+// ─── SessionStorage: save/restore item selections across PesaPal swap ─────────
+//
+// When payment_iframe.html swaps its src to PesaPal the payment_page_pin page
+// is discarded. When src swaps back the page reloads fresh. We persist the
+// buyer's pay/deposit selections in sessionStorage so they are restored
+// automatically and the buyer only needs to re-enter their PIN.
+
+var _SESSION_KEY = 'fc_item_actions_' + REQUEST_ID;
+
+function _saveItemActions() {
+    try {
+        var saved = {};
+        Object.keys(itemMap).forEach(function(id) {
+            if (itemMap[id].action) saved[id] = itemMap[id].action;
+        });
+        sessionStorage.setItem(_SESSION_KEY, JSON.stringify(saved));
+    } catch(e) {}
+}
+
+function _restoreItemActions() {
+    try {
+        var raw = sessionStorage.getItem(_SESSION_KEY);
+        if (!raw) return;
+        var saved = JSON.parse(raw);
+        Object.keys(saved).forEach(function(id) {
+            var action = saved[id];
+            document.querySelectorAll('.action-btn[data-item-id="' + id + '"]').forEach(function(b) {
+                b.classList.remove('bg-primary','text-black','border-primary');
+                b.classList.add('border-white/30','text-white/50');
+            });
+            var activeBtn = document.querySelector('.action-btn[data-item-id="' + id + '"][data-action="' + action + '"]');
+            if (activeBtn) {
+                activeBtn.classList.remove('border-white/30','text-white/50');
+                activeBtn.classList.add('bg-primary','text-black','border-primary');
+            }
+            if (itemMap[id]) itemMap[id].action = action;
+            var desc = document.querySelector('.action-desc[data-item-id="' + id + '"]');
+            if (desc) { desc.textContent = DESCRIPTIONS[action] || ''; desc.classList.remove('hidden'); }
+        });
+        recalculate();
+    } catch(e) {}
+}
+
+// Run on page load — handles the reload after PesaPal swap-back
+_restoreItemActions();
+
+// ─── Tell the parent frame to swap src to PesaPal ─────────────────────────────
+function _notifyParentPesapalRedirect(redirectUrl) {
+    try {
+        // window.parent is payment_iframe.html (the shopping app's container)
+        window.parent.postMessage({ type: 'pesapal_redirect', url: redirectUrl }, '*');
+    } catch(e) {
+        // Fallback: open in new tab if postMessage fails
+        window.open(redirectUrl, '_blank', 'noopener,noreferrer');
+    }
+}
+
+// ─── Main submit ──────────────────────────────────────────────────────────────
+document.getElementById('submitBtn').addEventListener('click', async function () {
+    var pin = getPin();
+    if (pin.length !== 4) { showStatus('Enter your 4-digit PIN', 'error'); return; }
+
+    var totalAll  = Object.values(itemMap).reduce(function(s,i){ return s+i.amount; }, 0);
+    var shortfall = Math.max(0, totalAll - walletFree);
+    var phoneEl   = document.getElementById('phone_number');
+    var phone     = phoneEl ? phoneEl.value.trim() : '';
+
+    if (shortfall > 0 && !phone) {
+        showStatus('Enter your mobile money number for the top-up', 'error');
+        if (phoneEl) phoneEl.focus();
+        return;
+    }
+
+    var btn      = this;
+    btn.disabled = true;
+    var origText = btn.textContent;
+    btn.textContent = 'Processing…';
+
+    document.getElementById('progressSteps').classList.remove('hidden');
+    setStep(1,'active'); setStep(2,'pending'); setStep(3,'pending');
+
+    var itemActions = Object.keys(itemMap).map(function(id) {
+        return { item_id: parseInt(id), action: itemMap[id].action };
+    });
+    await _doProcessItems(itemActions, pin, phone, btn, origText);
+});
+
+// ─── Core processing function ─────────────────────────────────────────────────
+async function _doProcessItems(itemActions, pin, phone, btn, origText) {
+    var fd = new FormData();
+    fd.append('email',        BUYER_EMAIL);
+    fd.append('pin',          pin);
+    fd.append('item_actions', JSON.stringify(itemActions));
+    if (phone) fd.append('phone_number', phone);
+
+    var t2 = setTimeout(function(){ setStep(2,'active'); }, 900);
+    var t3 = setTimeout(function(){ setStep(3,'active'); }, 1800);
+
+    try {
+        var resp = await fetch('/payment/' + REQUEST_ID + '/process-items/', { method: 'POST', body: fd });
+        clearTimeout(t2); clearTimeout(t3);
+        var data = await resp.json();
+
+        // ── HTTP 202: top-up required — swap parent frame to PesaPal ─────
+        if (resp.status === 202 && data.requires_redirect) {
+            document.getElementById('progressSteps').classList.add('hidden');
+
+            // Persist item selections so they survive the src reload
+            _saveItemActions();
+
+            // Hand off to payment_iframe.html — it swaps the iframe src
+            _notifyParentPesapalRedirect(data.redirect_url);
+
+            if (btn) { btn.disabled = false; btn.textContent = origText || 'Continue'; }
+            return;
+        }
+
+        // ── Success ───────────────────────────────────────────────────────
+        if (resp.ok && data.success) {
+            try { sessionStorage.removeItem(_SESSION_KEY); } catch(e) {}
+
+            setStep(1,'complete'); setStep(2,'complete'); setStep(3,'complete');
+            if (btn) { btn.textContent = '✓ Done!'; btn.classList.replace('bg-primary','bg-white'); }
+
+            (data.item_results || []).forEach(function(r) {
+                var labels = { escrowed:'🔒 Held in Escrow', deposited:'🔒 Reserved in Wallet', paid:'Released ✓', failed:'Failed ✗' };
+                updateItemBadge(r.item_id, r.status, labels[r.status] || r.status);
+            });
+
+            if (data.wallet_balance !== undefined)
+                document.getElementById('walletBalanceDisplay').textContent =
+                    Math.round(parseFloat(data.wallet_balance)).toLocaleString() + ' ' + CURRENCY;
+            if (data.wallet_free !== undefined) {
+                walletFree = parseFloat(data.wallet_free);
+                document.getElementById('walletFreeDisplay').textContent = Math.round(walletFree).toLocaleString();
+            }
+            var resEl = document.getElementById('walletReservedDisplay');
+            if (resEl && data.wallet_reserved !== undefined)
+                resEl.textContent = Math.round(parseFloat(data.wallet_reserved)).toLocaleString();
+
+            showStatus(data.message || 'Success!', 'success');
+
+            var hasEscrowed  = (data.item_results||[]).some(function(r){ return r.status==='escrowed'; });
+            var hasDeposited = (data.item_results||[]).some(function(r){ return r.status==='deposited'; });
+            var hasPaid      = (data.item_results||[]).some(function(r){ return r.status==='paid'; });
+            var msgType = hasEscrowed && !hasDeposited && !hasPaid ? 'payment_escrowed'
+                        : hasDeposited && !hasEscrowed && !hasPaid ? 'payment_deposited'
+                        : hasPaid && !hasEscrowed && !hasDeposited ? 'payment_success'
+                        : 'payment_mixed';
+            setTimeout(function() {
+                window.parent.postMessage({ type: msgType, request_id: REQUEST_ID }, '*');
+            }, 1200);
+
+        // ── Error ─────────────────────────────────────────────────────────
+        } else {
+            document.getElementById('progressSteps').classList.add('hidden');
+            showStatus(data.error || 'Something went wrong. Please try again.', 'error');
+            clearPin();
+            if (btn) { btn.disabled = false; btn.textContent = origText || 'Try Again'; }
+        }
+
+    } catch(err) {
+        clearTimeout(t2); clearTimeout(t3);
+        document.getElementById('progressSteps').classList.add('hidden');
+        showStatus('Network error. Please try again.', 'error');
+        clearPin();
+        if (btn) { btn.disabled = false; btn.textContent = origText || 'Try Again'; }
+    }
+}
+</script>
+{% endblock %}

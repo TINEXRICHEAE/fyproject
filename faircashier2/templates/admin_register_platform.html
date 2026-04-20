@@ -1,0 +1,192 @@
+<!-- templates/admin_register_platform.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Register Platform - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">add_business</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Register Platform</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Connect Your E-commerce</p>
+    </div>
+
+    <!-- Registration Form -->
+    <form id="platformForm" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Platform Name -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Platform Name
+            </label>
+            <input 
+                type="text" 
+                name="platform_name"
+                placeholder="My E-commerce Store"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+        </div>
+
+        <!-- Domain -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Domain
+            </label>
+            <input 
+                type="url" 
+                name="domain"
+                placeholder="https://mystore.com"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+        </div>
+
+        <!-- Return URL -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Return URL
+            </label>
+            <input 
+                type="url" 
+                name="return_url"
+                placeholder="https://mystore.com/payment/return"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">Where to redirect after payment</p>
+        </div>
+
+        <!-- Callback URL -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Callback URL
+            </label>
+            <input 
+                type="url" 
+                name="callback_url"
+                placeholder="https://mystore.com/api/payment/callback"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">For payment notifications</p>
+        </div>
+
+        <!-- Mobile Money Provider -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Mobile Money Provider
+            </label>
+            <select 
+                name="mobile_money_provider"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            >
+                <option value="mtn">MTN Mobile Money</option>
+                <option value="airtel">Airtel Money</option>
+                <option value="other">Other</option>
+            </select>
+        </div>
+
+        <!-- Mobile Money API Key (Optional) -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Mobile Money API Key (Optional)
+            </label>
+            <input 
+                type="text" 
+                name="mobile_money_api_key"
+                placeholder="Your MM API Key"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">Leave empty to use default</p>
+        </div>
+
+        <!-- Success Message -->
+        <div id="successMsg" class="hidden border-2 border-primary bg-primary text-black p-4">
+            <p class="text-xs font-black uppercase mb-2">Platform Registered!</p>
+            <p class="text-xs font-bold mb-2">Your API Key:</p>
+            <div class="border-2 border-black p-2 bg-white">
+                <code id="apiKey" class="text-xs font-bold text-black break-all"></code>
+            </div>
+            <p class="text-xs font-bold mt-2">Platform ID: <span id="platformId" class="font-black"></span></p>
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Register Platform
+        </button>
+    </form>
+
+    <!-- Back Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <a href="/admin-dashboard/" class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('platformForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Registering...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/register-platform/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Show success message with API key
+            document.getElementById('apiKey').textContent = data.api_key;
+            document.getElementById('platformId').textContent = data.platform_id;
+            document.getElementById('successMsg').classList.remove('hidden');
+            
+            // Hide form
+            this.style.display = 'none';
+            submitBtn.style.display = 'none';
+            
+            // Redirect after 10 seconds
+            setTimeout(() => {
+                window.location.href = '/admin-dashboard/';
+            }, 10000);
+        } else {
+            showError(data.error || 'Registration failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Register Platform';
+        }
+    } catch (error) {
+        showError('Network error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Register Platform';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}

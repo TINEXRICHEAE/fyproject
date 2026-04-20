@@ -12,3 +12,11 @@ faircashier/logs/
 notes.txt
 prompt.txt
 temp.txt
+api3-demo-keys.txt
+response.txt
+
+
+
+faircashier2/logs/
+/faircashier2/.env
+/faircashier2/cashingapp/__pycache__/

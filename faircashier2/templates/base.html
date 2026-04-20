@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Fair Cashier{% endblock %}</title>
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <div class="nav-brand">
+                <a href="{% url 'home' %}">Fair Cashier</a>
+            </div>
+            <div class="nav-menu">
+                {% if user.is_authenticated %}
+                    <span class="user-info">{{ user.email }} ({{ user.get_role_display }})</span>
+                    <a href="{% url 'user_profile' %}">Profile</a>
+                    <button onclick="logout()" class="btn-logout">Logout</button>
+                {% else %}
+                    <a href="{% url 'login_user' %}">Login</a>
+                    <a href="{% url 'register_user' %}">Register</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        {% block content %}{% endblock %}
+    </div>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Fair Cashier. All rights reserved.</p>
+        </div>
+    </footer>
+
+    <script src="{% static 'js/main.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

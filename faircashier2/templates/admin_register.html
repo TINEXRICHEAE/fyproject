@@ -1,0 +1,145 @@
+<!-- templates/admin_register.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Admin Registration - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">admin_panel_settings</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Admin Registration</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Platform Management</p>
+    </div>
+
+    <!-- Registration Form -->
+    <form id="adminRegisterForm" class="space-y-6">
+        {% csrf_token %}
+
+        <!-- Email -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Email Address
+            </label>
+            <input 
+                type="email" 
+                id="email" 
+                name="email"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+                autofocus
+            />
+        </div>
+
+        <!-- Password -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Password
+            </label>
+            <input 
+                type="password" 
+                id="password" 
+                name="password"
+                minlength="6"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-2">Minimum 6 characters</p>
+        </div>
+
+        <!-- Phone Number (Optional) -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Phone Number (Optional)
+            </label>
+            <input 
+                type="tel" 
+                id="phone_number" 
+                name="phone_number"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            />
+        </div>
+
+        <!-- Error Message -->
+        <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+
+        <!-- Submit Button -->
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Create Admin Account
+        </button>
+    </form>
+
+    <!-- Info Box -->
+    <div class="border-2 border-white p-4 mt-6">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Admin Access Includes:</p>
+        <ul class="text-xs font-bold text-white/70 space-y-2">
+            <li>• Register e-commerce platforms</li>
+            <li>• View transaction reports</li>
+            <li>• Manage disputes</li>
+            <li>• API key management</li>
+        </ul>
+    </div>
+
+    <!-- Login Link -->
+    <div class="text-center mt-6 border-t-2 border-white pt-6">
+        <p class="text-xs font-bold text-white/70 uppercase">
+            Already have an account?
+            <a href="/login/" class="text-primary underline decoration-2">Login Here</a> OR Return <a href="{% url 'home' %}" class="text-primary underline decoration-2">← Home</a>
+        </p>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('adminRegisterForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creating Account...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch('/register/', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            submitBtn.textContent = 'Success!';
+            submitBtn.classList.remove('bg-primary');
+            submitBtn.classList.add('bg-white');
+            
+            setTimeout(() => {
+                window.location.href = data.redirect_url;
+            }, 500);
+        } else {
+            showError(data.error || 'Registration failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Create Admin Account';
+        }
+    } catch (error) {
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Admin Account';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}

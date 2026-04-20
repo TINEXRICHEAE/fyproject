@@ -1,0 +1,77 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Register - Fair Cashier</title>
+  <link rel="stylesheet" href="{% static 'css/register_user.css' %}">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="registration-container">
+    <h1>Create Your Wallet</h1>
+    <p>Set up your Fair Cashier wallet to complete the payment.</p>
+    {% if prefill_email %}
+    <p class="email-notice">Registering as: <strong>{{ prefill_email }}</strong></p>
+    {% endif %}
+
+    <!-- Registration Form -->
+    <form id="registrationForm" method="post">
+      {% csrf_token %}
+
+      <!-- Email Field (Pre-filled and readonly) -->
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" 
+               value="{{ prefill_email }}" {% if prefill_email %}readonly{% endif %} required>
+        <span class="error-message" id="emailError"></span>
+      </div>
+
+      <!-- Password Field -->
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" placeholder="Create a secure password" required autofocus>
+        <span class="error-message" id="passwordError"></span>
+        <div class="password-instructions">
+          <p>Password must contain:</p>
+          <ul>
+            <li id="length">At least 8 characters</li>
+            <li id="uppercase">One uppercase letter</li>
+            <li id="lowercase">One lowercase letter</li>
+            <li id="digit">One digit</li>
+            <li id="special">One special character</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Phone Number Field (Optional) -->
+      <div class="form-group">
+        <label for="phone_number">Phone Number (Optional)</label>
+        <input type="tel" id="phone_number" name="phone_number" placeholder="+256700000000">
+        <span class="error-message" id="phoneError"></span>
+      </div>
+
+      <!-- Hidden role field (default to buyer for payment flow) -->
+      <input type="hidden" name="role" value="buyer">
+
+      <!-- Submit Button -->
+      <button type="submit" class="btn">Create Wallet & Continue</button>
+    </form>
+
+    <!-- Messages Section -->
+    <div id="messageBox" class="message-box"></div>
+
+    <!-- Link to login Page -->
+    <p class="login-link">
+      Already have an account? <a href="{% url 'login_user' %}{% if return_url %}?email={{ prefill_email }}&return={{ return_url }}{% endif %}">Login here</a>.
+    </p>
+  </div>
+
+  <script>
+    const returnUrl = '{{ return_url }}';
+    const prefillEmail = '{{ prefill_email }}';
+  </script>
+  <script src="{% static 'js/register_user.js' %}"></script>
+</body>
+</html>

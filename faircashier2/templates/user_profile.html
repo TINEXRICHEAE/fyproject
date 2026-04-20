@@ -1,0 +1,664 @@
+{% extends 'base.html' %}
+
+{% block title %}My Profile - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="profile-page">
+    <div class="page-header">
+        <h1>My Profile</h1>
+        <p class="subtitle">Manage your account settings and preferences</p>
+    </div>
+
+    <div class="profile-container">
+        <!-- Profile Information -->
+        <div class="main-content">
+            <!-- Account Overview -->
+            <div class="card profile-overview">
+                <div class="profile-header">
+                    <div class="profile-avatar">
+                        <div class="avatar-circle">
+                            {{ user.email|first|upper }}
+                        </div>
+                    </div>
+                    <div class="profile-info">
+                        <h2>{{ user.email }}</h2>
+                        <span class="role-badge badge-{{ user.role }}">{{ user.get_role_display }}</span>
+                        <p class="join-date">Member since {{ user.created_at|date:"F Y" }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit Profile Form -->
+            <div class="card">
+                <h2>Personal Information</h2>
+                <form method="POST" action="{% url 'user_profile' %}" id="profileForm">
+                    {% csrf_token %}
+
+                    <!-- Email (Read-only) -->
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input 
+                            type="email" 
+                            id="email" 
+                            class="form-control" 
+                            value="{{ user.email }}"
+                            readonly
+                            disabled
+                        >
+                        <small class="form-text">Email cannot be changed</small>
+                    </div>
+
+                    <!-- Phone Number -->
+                    <div class="form-group">
+                        <label for="phone_number">Phone Number</label>
+                        <input 
+                            type="tel" 
+                            name="phone_number" 
+                            id="phone_number" 
+                            class="form-control" 
+                            value="{{ user.phone_number }}"
+                            pattern="256[0-9]{9}"
+                            placeholder="256XXXXXXXXX"
+                        >
+                        <small class="form-text">Format: 256XXXXXXXXX (e.g., 256701234567)</small>
+                    </div>
+
+                    <!-- Role (Read-only) -->
+                    <div class="form-group">
+                        <label for="role">Account Role</label>
+                        <input 
+                            type="text" 
+                            id="role" 
+                            class="form-control" 
+                            value="{{ user.get_role_display }}"
+                            readonly
+                            disabled
+                        >
+                        <small class="form-text">Role cannot be changed</small>
+                    </div>
+
+                    <!-- Save Button -->
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">💾</span> Save Changes
+                    </button>
+                </form>
+            </div>
+
+            <!-- Change Password -->
+            <div class="card">
+                <h2>Change Password</h2>
+                <form method="POST" action="#" id="passwordForm">
+                    {% csrf_token %}
+
+                    <div class="form-group">
+                        <label for="current_password">Current Password</label>
+                        <input 
+                            type="password" 
+                            name="current_password" 
+                            id="current_password" 
+                            class="form-control" 
+                            required
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="new_password">New Password</label>
+                        <input 
+                            type="password" 
+                            name="new_password" 
+                            id="new_password" 
+                            class="form-control" 
+                            required
+                            minlength="8"
+                        >
+                        <small class="form-text">Minimum 8 characters</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm_password">Confirm New Password</label>
+                        <input 
+                            type="password" 
+                            name="confirm_password" 
+                            id="confirm_password" 
+                            class="form-control" 
+                            required
+                        >
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <span class="btn-icon">🔒</span> Update Password
+                    </button>
+                </form>
+            </div>
+
+            <!-- Account Activity -->
+            <div class="card">
+                <h2>Account Activity</h2>
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <span class="activity-icon">👤</span>
+                        <div class="activity-content">
+                            <strong>Account Created</strong>
+                            <p>{{ user.created_at|date:"F d, Y at H:i" }}</p>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-icon">🔄</span>
+                        <div class="activity-content">
+                            <strong>Last Updated</strong>
+                            <p>{{ user.updated_at|date:"F d, Y at H:i" }}</p>
+                        </div>
+                    </div>
+                    <div class="activity-item">
+                        <span class="activity-icon">✅</span>
+                        <div class="activity-content">
+                            <strong>Account Status</strong>
+                            <p>
+                                {% if user.is_active %}
+                                <span class="badge badge-completed">Active</span>
+                                {% else %}
+                                <span class="badge badge-failed">Inactive</span>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Danger Zone -->
+            <div class="card danger-zone">
+                <h2>⚠️ Danger Zone</h2>
+                <div class="danger-content">
+                    <div class="danger-item">
+                        <div>
+                            <strong>Delete Account</strong>
+                            <p>Permanently delete your account and all associated data. This action cannot be undone.</p>
+                        </div>
+                        <button class="btn btn-danger" onclick="confirmDeleteAccount()">
+                            Delete Account
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar-content">
+            <!-- Wallet Quick View -->
+            <div class="card wallet-quick-view">
+                <h3>Wallet Balance</h3>
+                <div class="balance-display">
+                    <span class="currency">{{ wallet.currency }}</span>
+                    <span class="amount">{{ wallet.balance|floatformat:2 }}</span>
+                </div>
+                <div class="wallet-actions">
+                    {% if user.role == 'buyer' or user.role == 'admin' %}
+                    <a href="{% url 'deposit' %}" class="btn btn-primary btn-sm btn-block">Deposit</a>
+                    {% endif %}
+                    {% if user.role == 'seller' or user.role == 'admin' %}
+                    <a href="{% url 'cashout' %}" class="btn btn-success btn-sm btn-block">Cash Out</a>
+                    {% endif %}
+                    <a href="{% url 'wallet' %}" class="btn btn-outline btn-sm btn-block">View Wallet</a>
+                </div>
+            </div>
+
+            <!-- Account Stats -->
+            <div class="card">
+                <h3>Account Statistics</h3>
+                <div class="stat-item">
+                    <span class="stat-icon">📊</span>
+                    <div class="stat-info">
+                        <label>Account Age</label>
+                        <value>{{ user.created_at|timesince }}</value>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-icon">🔒</span>
+                    <div class="stat-info">
+                        <label>Security Level</label>
+                        <value>
+                            <span class="badge badge-warning">Basic</span>
+                        </value>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Links -->
+            <div class="card">
+                <h3>Quick Links</h3>
+                <ul class="quick-links">
+                    <li><a href="{% url 'wallet' %}">💳 My Wallet</a></li>
+                    {% if user.role == 'admin' %}
+                    <li><a href="{% url 'admin-dashboard' %}">📊 Admin Dashboard</a></li>
+                    <li><a href="{% url 'register_platform' %}">🔗 Register Platform</a></li>
+                    {% endif %}
+                    {% if user.role == 'buyer' %}
+                    <li><a href="{% url 'buyer-dashboard' %}">🛍️ Buyer Dashboard</a></li>
+                    <li><a href="{% url 'file_dispute' %}">⚠️ File Dispute</a></li>
+                    {% endif %}
+                    {% if user.role == 'seller' %}
+                    <li><a href="{% url 'seller-dashboard' %}">🏪 Seller Dashboard</a></li>
+                    {% endif %}
+                    <li><a href="#">📚 Help Center</a></li>
+                    <li><a href="#">💬 Contact Support</a></li>
+                </ul>
+            </div>
+
+            <!-- Security Tips -->
+            <div class="card security-tips">
+                <h3>🔒 Security Tips</h3>
+                <ul>
+                    <li>Use a strong, unique password</li>
+                    <li>Never share your account credentials</li>
+                    <li>Keep your phone number updated</li>
+                    <li>Review account activity regularly</li>
+                    <li>Log out from public devices</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>⚠️ Confirm Account Deletion</h2>
+            <button class="modal-close" onclick="closeDeleteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="warning-box">
+                <p><strong>This action is permanent and cannot be undone!</strong></p>
+                <p>Deleting your account will:</p>
+                <ul>
+                    <li>Remove all your personal information</li>
+                    <li>Delete your wallet and transaction history</li>
+                    <li>Cancel all pending transactions</li>
+                    <li>Remove access to all platforms</li>
+                </ul>
+                <p>Type <strong>DELETE</strong> to confirm:</p>
+                <input type="text" id="deleteConfirmation" class="form-control" placeholder="Type DELETE">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+            <button class="btn btn-danger" onclick="proceedDeleteAccount()">Delete My Account</button>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .profile-page {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .page-header {
+        margin-bottom: 30px;
+    }
+    
+    .page-header h1 {
+        font-size: 2.5em;
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    
+    .subtitle {
+        color: #666;
+        font-size: 1.1em;
+    }
+    
+    .profile-container {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 30px;
+    }
+    
+    .profile-overview {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 40px;
+    }
+    
+    .profile-header {
+        display: flex;
+        gap: 25px;
+        align-items: center;
+    }
+    
+    .avatar-circle {
+        width: 100px;
+        height: 100px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 3em;
+        font-weight: bold;
+        color: white;
+    }
+    
+    .profile-info h2 {
+        margin: 0 0 10px 0;
+        color: white;
+        font-size: 1.8em;
+    }
+    
+    .role-badge {
+        display: inline-block;
+        margin-bottom: 10px;
+    }
+    
+    .badge-buyer { background: #667eea; }
+    .badge-seller { background: #11998e; }
+    .badge-admin { background: #f5576c; }
+    .badge-superadmin { background: #764ba2; }
+    
+    .join-date {
+        margin: 0;
+        opacity: 0.9;
+    }
+    
+    .activity-list {
+        margin-top: 20px;
+    }
+    
+    .activity-item {
+        display: flex;
+        gap: 15px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        margin-bottom: 10px;
+    }
+    
+    .activity-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .activity-icon {
+        font-size: 2em;
+        flex-shrink: 0;
+    }
+    
+    .activity-content strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #333;
+    }
+    
+    .activity-content p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .danger-zone {
+        border: 2px solid #dc3545;
+        background: #fff5f5;
+    }
+    
+    .danger-zone h2 {
+        color: #dc3545;
+    }
+    
+    .danger-content {
+        margin-top: 20px;
+    }
+    
+    .danger-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .danger-item strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #dc3545;
+    }
+    
+    .danger-item p {
+        margin: 0;
+        color: #666;
+        font-size: 0.9em;
+    }
+    
+    .wallet-quick-view {
+        background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        color: white;
+        text-align: center;
+        padding: 30px;
+    }
+    
+    .wallet-quick-view h3 {
+        color: white;
+        margin-bottom: 15px;
+        opacity: 0.9;
+    }
+    
+    .balance-display {
+        display: flex;
+        flex-direction: column;
+        margin: 20px 0;
+    }
+    
+    .balance-display .currency {
+        font-size: 1em;
+        opacity: 0.8;
+    }
+    
+    .balance-display .amount {
+        font-size: 2.5em;
+        font-weight: bold;
+    }
+    
+    .wallet-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 20px;
+    }
+    
+    .stat-item {
+        display: flex;
+        gap: 15px;
+        padding: 15px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .stat-item:last-child {
+        border-bottom: none;
+    }
+    
+    .stat-icon {
+        font-size: 1.5em;
+        flex-shrink: 0;
+    }
+    
+    .stat-info {
+        flex: 1;
+    }
+    
+    .stat-info label {
+        display: block;
+        color: #666;
+        font-size: 0.9em;
+        margin-bottom: 3px;
+    }
+    
+    .stat-info value {
+        display: block;
+        color: #333;
+        font-weight: bold;
+    }
+    
+    .quick-links {
+        list-style: none;
+        padding: 0;
+        margin: 15px 0 0 0;
+    }
+    
+    .quick-links li {
+        margin-bottom: 10px;
+    }
+    
+    .quick-links a {
+        color: #333;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px;
+        border-radius: 5px;
+        transition: background 0.3s;
+    }
+    
+    .quick-links a:hover {
+        background: #f8f9fa;
+    }
+    
+    .security-tips {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+    }
+    
+    .security-tips h3 {
+        color: #856404;
+    }
+    
+    .security-tips ul {
+        margin: 10px 0 0 0;
+        padding-left: 20px;
+    }
+    
+    .security-tips li {
+        margin-bottom: 8px;
+        color: #856404;
+    }
+    
+    .warning-box {
+        background: #fff5f5;
+        border: 2px solid #dc3545;
+        border-radius: 8px;
+        padding: 20px;
+    }
+    
+    .warning-box strong {
+        color: #dc3545;
+    }
+    
+    .warning-box ul {
+        margin: 10px 0;
+        padding-left: 20px;
+    }
+    
+    .warning-box li {
+        margin-bottom: 5px;
+        color: #666;
+    }
+    
+    .modal-footer {
+        display: flex;
+        gap: 10px;
+        justify-content: flex-end;
+        padding-top: 20px;
+        border-top: 1px solid #dee2e6;
+        margin-top: 20px;
+    }
+    
+    @media (max-width: 968px) {
+        .profile-container {
+            grid-template-columns: 1fr;
+        }
+        
+        .profile-header {
+            flex-direction: column;
+            text-align: center;
+        }
+        
+        .danger-item {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Profile form submission
+    document.getElementById('profileForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = new FormData(this);
+        
+        fetch(this.action, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrftoken
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.message) {
+                showNotification(data.message, 'success');
+            } else if (data.error) {
+                showNotification(data.error, 'error');
+            }
+        })
+        .catch(error => {
+            showNotification('An error occurred', 'error');
+        });
+    });
+    
+    // Password form submission
+    document.getElementById('passwordForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const newPassword = document.getElementById('new_password').value;
+        const confirmPassword = document.getElementById('confirm_password').value;
+        
+        if (newPassword !== confirmPassword) {
+            showNotification('Passwords do not match', 'error');
+            return;
+        }
+        
+        if (newPassword.length < 8) {
+            showNotification('Password must be at least 8 characters', 'error');
+            return;
+        }
+        
+        showNotification('Password change functionality not yet implemented', 'warning');
+    });
+    
+    // Delete account modal
+    function confirmDeleteAccount() {
+        document.getElementById('deleteModal').classList.add('active');
+    }
+    
+    function closeDeleteModal() {
+        document.getElementById('deleteModal').classList.remove('active');
+        document.getElementById('deleteConfirmation').value = '';
+    }
+    
+    function proceedDeleteAccount() {
+        const confirmation = document.getElementById('deleteConfirmation').value;
+        
+        if (confirmation !== 'DELETE') {
+            showNotification('Please type DELETE to confirm', 'error');
+            return;
+        }
+        
+        if (confirm('Final confirmation: Are you absolutely sure you want to delete your account?')) {
+            deleteAccount();
+        }
+    }
+</script>
+{% endblock %}

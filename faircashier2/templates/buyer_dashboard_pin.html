@@ -1,0 +1,232 @@
+<!-- templates/buyer_dashboard_pin.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Buyer Dashboard - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-2xl">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">dashboard</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Buyer Dashboard</h1>
+    </div>
+
+    <!-- Email Display -->
+    <div class="mb-6 border-2 border-white p-4">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-1">Account</p>
+        <p class="text-sm font-black text-white">{{ email }}</p>
+    </div>
+
+    <!-- PIN Entry -->
+    <form id="dashboardForm" class="space-y-6 mb-8">
+        <input type="hidden" name="email" value="{{ email }}"/>
+
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <button
+            type="submit"
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            View Dashboard
+        </button>
+    </form>
+
+    <!-- Dashboard Content (Hidden Initially) -->
+    <div id="dashboardContent" class="hidden space-y-6">
+        <!-- Balance Card — total + free/reserved split -->
+        <div class="border-2 border-white">
+            <!-- Total balance -->
+            <div class="p-5 text-center border-b border-white/20">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Wallet Balance</p>
+                <p class="text-4xl font-black text-primary" id="balance">0.00</p>
+                <p class="text-xs font-bold text-white/70 uppercase mt-1" id="currency">UGX</p>
+            </div>
+            <!-- Free / Reserved split -->
+            <div class="grid grid-cols-2 divide-x divide-white/20">
+                <div class="p-3 text-center">
+                    <p class="text-xs font-black uppercase text-white/50 mb-0.5">Free Balance</p>
+                    <p class="text-lg font-black text-primary" id="freeBalance">0.00</p>
+                    <p class="text-xs text-white/40">Withdrawable</p>
+                </div>
+                <div class="p-3 text-center">
+                    <p class="text-xs font-black uppercase text-white/50 mb-0.5">Reserved</p>
+                    <p class="text-lg font-black text-white/60" id="reservedBalance">0.00</p>
+                    <p class="text-xs text-white/40">Pending</p>
+                </div>
+            </div>
+            <!-- Reserved note — shown when reserved > 0 -->
+            <div id="reservedNote" class="hidden border-t border-white/20 px-4 py-2 bg-white/5">
+                <p class="text-xs font-bold text-white/50 text-center">
+                    🔒 Reserved funds are earmarked for pending orders and will be released or transferred soon.
+                </p>
+            </div>
+        </div>
+
+        <!-- Quick Actions — 4 buttons -->
+        <div class="grid grid-cols-2 gap-4">
+            <a href="/wallet-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">account_balance_wallet</span>
+                    <p class="text-xs font-black uppercase">Wallet</p>
+                </div>
+            </a>
+            <a href="/deposit-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-primary bg-primary text-black p-4 text-center hover:bg-white transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">add</span>
+                    <p class="text-xs font-black uppercase">Deposit</p>
+                </div>
+            </a>
+            <a href="/cashout-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">arrow_upward</span>
+                    <p class="text-xs font-black uppercase">Cashout</p>
+                </div>
+            </a>
+            <a href="/cashout-pin/?email={{ email }}&mode=refund" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-xl mb-2">undo</span>
+                    <p class="text-xs font-black uppercase">Refund Deposit</p>
+                </div>
+            </a>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-3 border-b-2 border-black flex justify-between items-center">
+                <p class="text-xs font-black uppercase text-black">Recent Transactions</p>
+                <span class="material-symbols-outlined text-black text-sm">history</span>
+            </div>
+            <div id="transactions" class="divide-y-2 divide-white/10">
+                <p class="p-4 text-xs font-bold text-white/70 text-center">Loading...</p>
+            </div>
+        </div>
+
+        <!-- Recent Payments -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-3 border-b-2 border-black flex justify-between items-center">
+                <p class="text-xs font-black uppercase text-black">Recent Payments</p>
+                <span class="material-symbols-outlined text-black text-sm">payment</span>
+            </div>
+            <div id="payments" class="divide-y-2 divide-white/10">
+                <p class="p-4 text-xs font-bold text-white/70 text-center">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// PIN input auto-focus
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function () {
+        if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
+        if (index === 3 && this.value) document.getElementById('dashboardForm').dispatchEvent(new Event('submit'));
+    });
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) inputs[index - 1].focus();
+    });
+});
+document.getElementById('pin1').focus();
+
+document.getElementById('dashboardForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+
+    const pin = ['pin1','pin2','pin3','pin4'].map(id => document.getElementById(id).value).join('');
+    if (pin.length !== 4) { showError('Enter complete PIN'); return; }
+    document.getElementById('pin').value = pin;
+
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled    = true;
+    submitBtn.textContent = 'Loading…';
+
+    try {
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body:   new FormData(this),
+        });
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // Balance
+            const total    = parseFloat(data.wallet.balance)           || 0;
+            const reserved = parseFloat(data.wallet.reserved_balance)  || 0;
+            const free     = total - reserved;
+
+            document.getElementById('balance').textContent         = total.toLocaleString();
+            document.getElementById('currency').textContent        = data.wallet.currency;
+            document.getElementById('freeBalance').textContent     = free.toLocaleString();
+            document.getElementById('reservedBalance').textContent = reserved.toLocaleString();
+            if (reserved > 0) document.getElementById('reservedNote').classList.remove('hidden');
+
+            // Transactions
+            const txDiv = document.getElementById('transactions');
+            txDiv.innerHTML = data.transactions && data.transactions.length > 0
+                ? data.transactions.map(tx => `
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">${tx.type}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">${new Date(tx.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <p class="text-sm font-black text-primary">${parseFloat(tx.amount).toLocaleString()}</p>
+                        </div>
+                    </div>`).join('')
+                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No transactions yet</p>';
+
+            // Payments
+            const paymentsDiv = document.getElementById('payments');
+            paymentsDiv.innerHTML = data.payments && data.payments.length > 0
+                ? data.payments.map(p => `
+                    <div class="p-4 hover:bg-white hover:text-black transition-colors">
+                        <div class="flex justify-between items-center">
+                            <div>
+                                <p class="text-xs font-black uppercase">${p.status}</p>
+                                <p class="text-xs font-bold text-white/50 mt-1">ID: ${p.id.substring(0, 8)}…</p>
+                            </div>
+                            <p class="text-sm font-black text-primary">${parseFloat(p.amount).toLocaleString()}</p>
+                        </div>
+                    </div>`).join('')
+                : '<p class="p-4 text-xs font-bold text-white/70 text-center">No payments yet</p>';
+
+            document.getElementById('dashboardContent').classList.remove('hidden');
+            this.classList.add('hidden');
+        } else {
+            showError(data.error || 'Invalid PIN');
+            ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
+            document.getElementById('pin1').focus();
+            submitBtn.disabled    = false;
+            submitBtn.textContent = 'View Dashboard';
+        }
+    } catch {
+        showError('Network error');
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'View Dashboard';
+    }
+});
+
+function showError(message) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = message;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}

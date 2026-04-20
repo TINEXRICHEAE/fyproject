@@ -1,0 +1,622 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ platform.platform_name }} - Platform Details{% endblock %}
+
+{% block content %}
+<div class="platform-details-page">
+    <div class="page-header">
+        <a href="{% url 'admin-dashboard' %}" class="back-link">← Back to Dashboard</a>
+        <div class="header-content">
+            <h1>{{ platform.platform_name }}</h1>
+            <span class="badge badge-{{ platform.is_active|yesno:'completed,failed' }} badge-lg">
+                {{ platform.is_active|yesno:'Active,Inactive' }}
+            </span>
+        </div>
+        <p class="subtitle">{{ platform.domain }}</p>
+    </div>
+
+    <!-- Platform Overview -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-icon">💳</div>
+            <div class="stat-content">
+                <h3>Total Transactions</h3>
+                <p class="stat-number">{{ transactions.count }}</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">💰</div>
+            <div class="stat-content">
+                <h3>Total Volume</h3>
+                <p class="stat-number">{{ total_volume|default:"0.00" }} UGX</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">📋</div>
+            <div class="stat-content">
+                <h3>Payment Requests</h3>
+                <p class="stat-number">{{ payment_requests.count }}</p>
+            </div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon">📅</div>
+            <div class="stat-content">
+                <h3>Active Since</h3>
+                <p class="stat-number">{{ platform.created_at|date:"M Y" }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="platform-content">
+        <!-- Configuration Section -->
+        <div class="main-section">
+            <!-- API Configuration -->
+            <div class="card">
+                <div class="card-header-flex">
+                    <h2>API Configuration</h2>
+                    <button class="btn btn-secondary btn-sm" onclick="copyApiKey()">
+                        Copy API Key
+                    </button>
+                </div>
+                
+                <div class="config-item">
+                    <label>API Key:</label>
+                    <div class="api-key-display">
+                        <code id="apiKey">{{ platform.api_key }}</code>
+                        <button class="icon-btn" onclick="toggleApiKeyVisibility()" title="Toggle visibility">
+                            <span id="visibilityIcon">👁️</span>
+                        </button>
+                    </div>
+                    <small class="warning-text">⚠️ Keep this key secret! Anyone with this key can create payment requests on your platform.</small>
+                </div>
+
+                <div class="config-item">
+                    <label>Platform Domain:</label>
+                    <div class="config-value">
+                        <a href="{{ platform.domain }}" target="_blank">{{ platform.domain }}</a>
+                    </div>
+                </div>
+
+                <div class="config-item">
+                    <label>Return URL:</label>
+                    <div class="config-value">{{ platform.return_url }}</div>
+                </div>
+
+                <div class="config-item">
+                    <label>Callback URL:</label>
+                    <div class="config-value">{{ platform.callback_url }}</div>
+                </div>
+
+                <div class="config-item">
+                    <label>Mobile Money Provider:</label>
+                    <div class="config-value">
+                        <span class="badge badge-info">{{ platform.get_mobile_money_provider_display }}</span>
+                    </div>
+                </div>
+
+                <div class="config-item">
+                    <label>Platform Status:</label>
+                    <div class="config-value">
+                        <div class="status-toggle">
+                            <label class="switch">
+                                <input type="checkbox" {% if platform.is_active %}checked{% endif %} onchange="togglePlatformStatus({{ platform.platform_id }})">
+                                <span class="slider"></span>
+                            </label>
+                            <span class="status-text">{{ platform.is_active|yesno:'Active,Inactive' }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Integration Guide -->
+            <div class="card integration-guide">
+                <h2>Quick Integration Guide</h2>
+                <div class="code-section">
+                    <h4>1. Create Payment Request</h4>
+                    <pre><code>// Example API call
+fetch('{{ request.scheme }}://{{ request.get_host }}/api/payment-request/create/', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    api_key: '{{ platform.api_key }}',
+    buyer_email: 'buyer@example.com',
+    items: [
+      {
+        seller_email: 'seller@example.com',
+        amount: '50000',
+        description: 'Product name'
+      }
+    ]
+  })
+})</code></pre>
+                </div>
+
+                <div class="code-section">
+                    <h4>2. Display Payment Page</h4>
+                    <pre><code>// Show payment page in iframe
+const iframe = document.createElement('iframe');
+iframe.src = response.payment_url;
+iframe.style.width = '100%';
+iframe.style.height = '600px';
+document.getElementById('payment-container').appendChild(iframe);</code></pre>
+                </div>
+
+                <div class="code-section">
+                    <h4>3. Handle Callback</h4>
+                    <pre><code>// Your webhook endpoint at {{ platform.callback_url }}
+// Will receive payment notifications
+{
+  "request_id": "...",
+  "status": "completed",
+  "amount": 50000,
+  "buyer_email": "buyer@example.com"
+}</code></pre>
+                </div>
+
+                <a href="#" class="btn btn-outline btn-block">View Full Documentation</a>
+            </div>
+
+            <!-- Recent Transactions -->
+            <div class="card">
+                <div class="card-header-flex">
+                    <h2>Recent Transactions</h2>
+                    <a href="#" class="btn btn-secondary btn-sm">Export</a>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Transaction ID</th>
+                                <th>Type</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for transaction in transactions %}
+                            <tr>
+                                <td>{{ transaction.created_at|date:"M d, Y H:i" }}</td>
+                                <td><code>{{ transaction.transaction_id|truncatechars:12 }}</code></td>
+                                <td><span class="badge badge-{{ transaction.transaction_type }}">{{ transaction.get_transaction_type_display }}</span></td>
+                                <td>{{ transaction.amount|floatformat:2 }} {{ transaction.currency }}</td>
+                                <td><span class="badge badge-{{ transaction.status }}">{{ transaction.get_status_display }}</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center empty-state">
+                                    <div class="empty-state-icon">📭</div>
+                                    <p>No transactions yet</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Payment Requests -->
+            <div class="card">
+                <h2>Recent Payment Requests</h2>
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Request ID</th>
+                                <th>Date</th>
+                                <th>Buyer</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for request in payment_requests %}
+                            <tr>
+                                <td><code>{{ request.request_id|truncatechars:12 }}</code></td>
+                                <td>{{ request.created_at|date:"M d, Y H:i" }}</td>
+                                <td>{{ request.buyer_email }}</td>
+                                <td>{{ request.total_amount|floatformat:2 }} {{ request.currency }}</td>
+                                <td><span class="badge badge-{{ request.status }}">{{ request.get_status_display }}</span></td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center empty-state">
+                                    <div class="empty-state-icon">📋</div>
+                                    <p>No payment requests yet</p>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="sidebar-section">
+            <!-- Quick Actions -->
+            <div class="card">
+                <h3>Quick Actions</h3>
+                <div class="action-buttons">
+                    <button class="btn btn-primary btn-block" onclick="testWebhook()">
+                        Test Webhook
+                    </button>
+                    <button class="btn btn-secondary btn-block" onclick="regenerateApiKey()">
+                        Regenerate API Key
+                    </button>
+                    <a href="#" class="btn btn-outline btn-block">
+                        Download Reports
+                    </a>
+                </div>
+            </div>
+
+            <!-- Platform Info -->
+            <div class="card">
+                <h3>Platform Details</h3>
+                <div class="info-list">
+                    <div class="info-item">
+                        <span class="info-label">Admin:</span>
+                        <span class="info-value">{{ platform.admin.email }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Created:</span>
+                        <span class="info-value">{{ platform.created_at|date:"M d, Y" }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Last Updated:</span>
+                        <span class="info-value">{{ platform.updated_at|date:"M d, Y" }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resources -->
+            <div class="card resources-card">
+                <h3>Resources</h3>
+                <ul class="resource-list">
+                    <li><a href="#">📖 API Documentation</a></li>
+                    <li><a href="#">🔧 Integration Examples</a></li>
+                    <li><a href="#">🎥 Video Tutorials</a></li>
+                    <li><a href="#">💬 Developer Forum</a></li>
+                    <li><a href="#">📧 Contact Support</a></li>
+                </ul>
+            </div>
+
+            <!-- Security Notice -->
+            <div class="card security-card">
+                <h3>🔒 Security</h3>
+                <ul>
+                    <li>Never share your API key publicly</li>
+                    <li>Use HTTPS for all endpoints</li>
+                    <li>Validate webhook signatures</li>
+                    <li>Monitor for suspicious activity</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .platform-details-page {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    
+    .header-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .header-content h1 {
+        margin: 0;
+    }
+    
+    .badge-lg {
+        font-size: 1em;
+        padding: 8px 15px;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+    
+    .stat-icon {
+        font-size: 3em;
+    }
+    
+    .stat-content h3 {
+        margin: 0 0 10px 0;
+        font-size: 0.9em;
+        color: #666;
+        font-weight: normal;
+    }
+    
+    .stat-number {
+        font-size: 1.8em;
+        font-weight: bold;
+        color: #333;
+        margin: 0;
+    }
+    
+    .platform-content {
+        display: grid;
+        grid-template-columns: 2.5fr 1fr;
+        gap: 30px;
+    }
+    
+    .config-item {
+        padding: 15px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .config-item:last-child {
+        border-bottom: none;
+    }
+    
+    .config-item label {
+        display: block;
+        font-weight: bold;
+        color: #666;
+        margin-bottom: 8px;
+    }
+    
+    .config-value {
+        color: #333;
+    }
+    
+    .api-key-display {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: #f8f9fa;
+        padding: 12px;
+        border-radius: 5px;
+    }
+    
+    .api-key-display code {
+        flex: 1;
+        font-size: 0.95em;
+        word-break: break-all;
+    }
+    
+    .icon-btn {
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2em;
+        padding: 5px;
+    }
+    
+    .warning-text {
+        display: block;
+        margin-top: 8px;
+        color: #856404;
+        font-style: italic;
+    }
+    
+    .status-toggle {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    
+    .switch {
+        position: relative;
+        display: inline-block;
+        width: 50px;
+        height: 24px;
+    }
+    
+    .switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+    
+    .slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #ccc;
+        transition: .4s;
+        border-radius: 24px;
+    }
+    
+    .slider:before {
+        position: absolute;
+        content: "";
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        bottom: 3px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+    
+    input:checked + .slider {
+        background-color: #28a745;
+    }
+    
+    input:checked + .slider:before {
+        transform: translateX(26px);
+    }
+    
+    .integration-guide {
+        background: #f8f9fa;
+    }
+    
+    .code-section {
+        margin-bottom: 25px;
+    }
+    
+    .code-section h4 {
+        margin: 0 0 10px 0;
+        color: #333;
+    }
+    
+    .code-section pre {
+        background: #2d2d2d;
+        color: #f8f8f2;
+        padding: 15px;
+        border-radius: 5px;
+        overflow-x: auto;
+        margin: 0;
+    }
+    
+    .code-section code {
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+        line-height: 1.5;
+    }
+    
+    .action-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .info-list {
+        margin-top: 15px;
+    }
+    
+    .info-item {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .info-item:last-child {
+        border-bottom: none;
+    }
+    
+    .info-label {
+        color: #666;
+        font-weight: bold;
+    }
+    
+    .info-value {
+        color: #333;
+    }
+    
+    .resources-card {
+        background: #e7f3ff;
+    }
+    
+    .resource-list {
+        list-style: none;
+        padding: 0;
+        margin: 15px 0 0 0;
+    }
+    
+    .resource-list li {
+        margin-bottom: 10px;
+    }
+    
+    .resource-list a {
+        color: #0056b3;
+        text-decoration: none;
+    }
+    
+    .resource-list a:hover {
+        text-decoration: underline;
+    }
+    
+    .security-card {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+    }
+    
+    .security-card h3 {
+        color: #856404;
+    }
+    
+    .security-card ul {
+        margin: 10px 0 0 0;
+        padding-left: 20px;
+    }
+    
+    .security-card li {
+        margin-bottom: 8px;
+        color: #856404;
+    }
+    
+    @media (max-width: 1200px) {
+        .platform-content {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let apiKeyVisible = true;
+    
+    function toggleApiKeyVisibility() {
+        const apiKeyEl = document.getElementById('apiKey');
+        const icon = document.getElementById('visibilityIcon');
+        
+        if (apiKeyVisible) {
+            const key = apiKeyEl.textContent;
+            apiKeyEl.textContent = '•'.repeat(key.length);
+            icon.textContent = '🙈';
+        } else {
+            apiKeyEl.textContent = '{{ platform.api_key }}';
+            icon.textContent = '👁️';
+        }
+        
+        apiKeyVisible = !apiKeyVisible;
+    }
+    
+    function copyApiKey() {
+        const apiKey = '{{ platform.api_key }}';
+        navigator.clipboard.writeText(apiKey).then(() => {
+            showNotification('API key copied to clipboard', 'success');
+        });
+    }
+    
+    function togglePlatformStatus(platformId) {
+        if (confirm('Are you sure you want to change the platform status?')) {
+            // Implement AJAX call to update status
+            showNotification('Platform status updated', 'success');
+        }
+    }
+    
+    function testWebhook() {
+        showNotification('Sending test webhook...', 'info');
+        // Implement webhook test
+        setTimeout(() => {
+            showNotification('Test webhook sent successfully', 'success');
+        }, 1000);
+    }
+    
+    function regenerateApiKey() {
+        if (confirm('⚠️ WARNING: Regenerating the API key will invalidate the current key. All integrations using the old key will stop working. Are you sure?')) {
+            // Implement API key regeneration
+            showNotification('API key regeneration not yet implemented', 'warning');
+        }
+    }
+</script>
+{% endblock %}

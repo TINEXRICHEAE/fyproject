@@ -1,0 +1,446 @@
+<!-- templates/admin_cashout_requests.html -->
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Cashout Requests - Fair Cashier</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#00FF00",
+                        "background-dark": "#000000",
+                    },
+                    fontFamily: { "display": ["Manrope", "sans-serif"] },
+                    borderRadius: { "none":"0","sm":"0","DEFAULT":"0","lg":"0","xl":"0","full":"0" },
+                },
+            },
+        }
+    </script>
+    <style>
+        body { font-family: 'Manrope', sans-serif; background:#000; color:#fff; }
+        * { box-shadow:none!important; text-shadow:none!important; }
+        .checkbox-item:checked { accent-color: #00FF00; }
+    </style>
+</head>
+<body class="min-h-screen">
+    <!-- Header -->
+    <header class="border-b-2 border-white p-6">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <div class="bg-primary w-12 h-12 flex items-center justify-center">
+                    <span class="material-symbols-outlined text-black font-black text-2xl">payments</span>
+                </div>
+                <div>
+                    <h1 class="text-2xl font-black uppercase tracking-tighter">Cashout Requests</h1>
+                    <p class="text-xs font-bold text-white/70 uppercase">Seller Disbursement Management</p>
+                </div>
+            </div>
+            <a href="/admin-dashboard/">
+                <button class="border-2 border-white px-6 py-3 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    ← Dashboard
+                </button>
+            </a>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto p-6">
+
+        <!-- Stats Summary -->
+        <div class="grid md:grid-cols-3 gap-6 mb-8">
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Pending Review</p>
+                <p class="text-3xl font-black text-white">{{ stats.total_pending }}</p>
+                <p class="text-sm font-bold text-white/50 mt-1">{{ stats.total_pending_amount|floatformat:0 }} UGX</p>
+            </div>
+            <div class="border-2 border-primary bg-primary p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-black/70 mb-2">Approved (Ready)</p>
+                <p class="text-3xl font-black text-black">{{ stats.total_approved }}</p>
+                <p class="text-sm font-bold text-black/50 mt-1">{{ stats.total_approved_amount|floatformat:0 }} UGX</p>
+            </div>
+            <div class="border-2 border-white p-6">
+                <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-2">Disbursed</p>
+                <p class="text-3xl font-black text-primary">{{ stats.total_disbursed }}</p>
+                <p class="text-sm font-bold text-white/50 mt-1">{{ stats.total_disbursed_amount|floatformat:0 }} UGX</p>
+            </div>
+        </div>
+
+        <!-- Filters & Actions Bar -->
+        <div class="border-2 border-white p-4 mb-6">
+            <div class="flex flex-wrap items-center justify-between gap-4">
+                <!-- Filters -->
+                <div class="flex flex-wrap gap-3 items-center">
+                    <span class="text-xs font-black uppercase text-white/70">Filter:</span>
+                    <select id="statusFilter" onchange="applyFilters()" class="border-2 border-white bg-black text-white px-3 py-2 text-xs font-bold">
+                        <option value="all" {% if status_filter == 'all' %}selected{% endif %}>All Status</option>
+                        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="approved" {% if status_filter == 'approved' %}selected{% endif %}>Approved</option>
+                        <option value="rejected" {% if status_filter == 'rejected' %}selected{% endif %}>Rejected</option>
+                        <option value="disbursed" {% if status_filter == 'disbursed' %}selected{% endif %}>Disbursed</option>
+                    </select>
+                    <select id="methodFilter" onchange="applyFilters()" class="border-2 border-white bg-black text-white px-3 py-2 text-xs font-bold">
+                        <option value="all" {% if method_filter == 'all' %}selected{% endif %}>All Methods</option>
+                        <option value="mtn_mobile_money" {% if method_filter == 'mtn_mobile_money' %}selected{% endif %}>MTN MoMo</option>
+                        <option value="airtel_mobile_money" {% if method_filter == 'airtel_mobile_money' %}selected{% endif %}>Airtel Money</option>
+                        <option value="bank_transfer" {% if method_filter == 'bank_transfer' %}selected{% endif %}>Bank Transfer</option>
+                    </select>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-wrap gap-3">
+                    <button onclick="bulkApprove()" class="border-2 border-primary bg-primary px-4 py-2 text-xs font-black uppercase text-black hover:bg-white transition-colors">
+                        Approve Selected
+                    </button>
+                    <button onclick="markDisbursed()" class="border-2 border-white px-4 py-2 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                        Mark Disbursed
+                    </button>
+                </div>
+            </div>
+
+            <!-- Export Buttons -->
+            <div class="flex flex-wrap gap-3 mt-4 pt-4 border-t-2 border-white/20">
+                <span class="text-xs font-black uppercase text-white/70 self-center">Export CSV:</span>
+                <a href="/admin-cashout-export/?method=mtn_mobile_money&status=approved" class="border-2 border-white px-3 py-2 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    MTN Format
+                </a>
+                <a href="/admin-cashout-export/?method=airtel_mobile_money&status=approved" class="border-2 border-white px-3 py-2 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    Airtel Format
+                </a>
+                <a href="/admin-cashout-export/?method=bank_transfer&status=approved" class="border-2 border-white px-3 py-2 text-xs font-black uppercase hover:bg-white hover:text-black transition-colors">
+                    Bank Format
+                </a>
+                <a href="/admin-cashout-export/?method=all&status=approved" class="border-2 border-primary px-3 py-2 text-xs font-black uppercase text-primary hover:bg-primary hover:text-black transition-colors">
+                    Export All
+                </a>
+            </div>
+        </div>
+
+        <!-- Select All -->
+        <div class="flex items-center gap-3 mb-4 px-2">
+            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="checkbox-item w-4 h-4"/>
+            <label for="selectAll" class="text-xs font-black uppercase text-white/70 cursor-pointer">Select All Visible</label>
+            <span id="selectedCount" class="text-xs font-bold text-primary ml-4">0 selected</span>
+        </div>
+
+        <!-- Requests Table -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-4 border-b-2 border-black">
+                <div class="grid grid-cols-12 gap-2 items-center">
+                    <span class="col-span-1 text-xs font-black uppercase text-black"></span>
+                    <span class="col-span-2 text-xs font-black uppercase text-black">Seller</span>
+                    <span class="col-span-2 text-xs font-black uppercase text-black">Amount</span>
+                    <span class="col-span-2 text-xs font-black uppercase text-black">Method</span>
+                    <span class="col-span-2 text-xs font-black uppercase text-black">Destination</span>
+                    <span class="col-span-1 text-xs font-black uppercase text-black">Status</span>
+                    <span class="col-span-2 text-xs font-black uppercase text-black text-right">Actions</span>
+                </div>
+            </div>
+
+            <div class="divide-y-2 divide-white/10">
+                {% if cashout_requests %}
+                    {% for req in cashout_requests %}
+                    <div class="p-4 hover:bg-white/5 transition-colors" id="row-{{ req.cashout_id }}">
+                        <div class="grid grid-cols-12 gap-2 items-center">
+                            <!-- Checkbox -->
+                            <div class="col-span-1">
+                                {% if req.status == 'pending' or req.status == 'approved' %}
+                                <input type="checkbox" class="cashout-checkbox checkbox-item w-4 h-4" 
+                                       value="{{ req.cashout_id }}" data-status="{{ req.status }}"
+                                       onchange="updateSelectedCount()"/>
+                                {% endif %}
+                            </div>
+
+                            <!-- Seller -->
+                            <div class="col-span-2">
+                                <p class="text-xs font-black text-white truncate">{{ req.seller.email }}</p>
+                                <p class="text-xs font-bold text-white/40 mt-1">{{ req.created_at|date:"M d, H:i" }}</p>
+                            </div>
+
+                            <!-- Amount -->
+                            <div class="col-span-2">
+                                <p class="text-sm font-black text-primary">{{ req.amount|floatformat:0 }}</p>
+                                <p class="text-xs font-bold text-white/40">{{ req.currency }}</p>
+                            </div>
+
+                            <!-- Method -->
+                            <div class="col-span-2">
+                                <p class="text-xs font-black uppercase
+                                    {% if req.payment_method == 'mtn_mobile_money' %}text-yellow-400
+                                    {% elif req.payment_method == 'airtel_mobile_money' %}text-red-400
+                                    {% else %}text-blue-400{% endif %}">
+                                    {% if req.payment_method == 'mtn_mobile_money' %}MTN
+                                    {% elif req.payment_method == 'airtel_mobile_money' %}Airtel
+                                    {% else %}Bank{% endif %}
+                                </p>
+                            </div>
+
+                            <!-- Destination -->
+                            <div class="col-span-2">
+                                {% if req.payment_method == 'bank_transfer' %}
+                                    <p class="text-xs font-bold text-white truncate">{{ req.bank_name }}</p>
+                                    <p class="text-xs font-bold text-white/40 truncate">{{ req.account_number }}</p>
+                                {% else %}
+                                    <p class="text-xs font-bold text-white">{{ req.phone_number }}</p>
+                                    <p class="text-xs font-bold text-white/40 truncate">{{ req.recipient_name }}</p>
+                                {% endif %}
+                            </div>
+
+                            <!-- Status -->
+                            <div class="col-span-1">
+                                <span class="text-xs font-black uppercase
+                                    {% if req.status == 'pending' %}text-white
+                                    {% elif req.status == 'approved' %}text-primary
+                                    {% elif req.status == 'disbursed' %}text-primary/50
+                                    {% elif req.status == 'rejected' %}text-white/30
+                                    {% endif %}">
+                                    {{ req.status }}
+                                </span>
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="col-span-2 text-right flex justify-end gap-2">
+                                <button onclick="viewDetails('{{ req.cashout_id }}')" 
+                                        class="border border-white/50 px-2 py-1 text-xs font-bold hover:bg-white hover:text-black transition-colors">
+                                    View
+                                </button>
+                                {% if req.status == 'pending' %}
+                                <button onclick="reviewCashout('{{ req.cashout_id }}', 'approve')"
+                                        class="border border-primary px-2 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-black transition-colors">
+                                    Approve
+                                </button>
+                                <button onclick="reviewCashout('{{ req.cashout_id }}', 'reject')"
+                                        class="border border-white/30 px-2 py-1 text-xs font-bold text-white/50 hover:bg-white hover:text-black transition-colors">
+                                    Reject
+                                </button>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if req.seller_note %}
+                        <p class="text-xs font-bold text-white/40 mt-2 ml-8">Note: {{ req.seller_note }}</p>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                {% else %}
+                <p class="p-8 text-center text-sm font-bold text-white/70">
+                    No cashout requests found
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </main>
+
+    <!-- Detail Modal -->
+    <div id="detailModal" class="hidden fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+        <div class="border-2 border-white bg-black w-full max-w-lg">
+            <div class="bg-white p-4 border-b-2 border-black flex justify-between items-center">
+                <h3 class="text-sm font-black uppercase text-black">Cashout Details</h3>
+                <button onclick="closeModal()" class="text-black font-black text-xl">&times;</button>
+            </div>
+            <div id="detailContent" class="p-6 space-y-4">
+                <!-- Filled by JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+    function getCookie(name) {
+        let val = null;
+        document.cookie.split(';').forEach(c => {
+            c = c.trim();
+            if (c.startsWith(name + '=')) val = decodeURIComponent(c.substring(name.length + 1));
+        });
+        return val;
+    }
+
+    function applyFilters() {
+        const status = document.getElementById('statusFilter').value;
+        const method = document.getElementById('methodFilter').value;
+        window.location.href = `?status=${status}&method=${method}`;
+    }
+
+    function toggleSelectAll() {
+        const checked = document.getElementById('selectAll').checked;
+        document.querySelectorAll('.cashout-checkbox').forEach(cb => { cb.checked = checked; });
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const count = document.querySelectorAll('.cashout-checkbox:checked').length;
+        document.getElementById('selectedCount').textContent = count + ' selected';
+    }
+
+    function getSelectedIds(filterStatus) {
+        const ids = [];
+        document.querySelectorAll('.cashout-checkbox:checked').forEach(cb => {
+            if (!filterStatus || cb.dataset.status === filterStatus) {
+                ids.push(cb.value);
+            }
+        });
+        return ids;
+    }
+
+    async function viewDetails(cashoutId) {
+        try {
+            const resp = await fetch(`/admin-cashout-review/${cashoutId}/`);
+            const data = await resp.json();
+            
+            const content = document.getElementById('detailContent');
+            content.innerHTML = `
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Seller</p>
+                        <p class="text-sm font-bold text-white">${data.seller_email}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Amount</p>
+                        <p class="text-sm font-black text-primary">${parseFloat(data.amount).toLocaleString()} ${data.currency}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Payment Method</p>
+                        <p class="text-sm font-bold text-white">${data.payment_method}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Seller Balance</p>
+                        <p class="text-sm font-bold text-white">${parseFloat(data.seller_balance).toLocaleString()} UGX</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Destination</p>
+                        <p class="text-sm font-bold text-white">${data.phone_number || data.account_number || 'N/A'}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Recipient</p>
+                        <p class="text-sm font-bold text-white">${data.recipient_name || data.account_name || 'N/A'}</p>
+                    </div>
+                    ${data.bank_name ? `
+                    <div class="col-span-2">
+                        <p class="text-xs font-black uppercase text-white/50">Bank</p>
+                        <p class="text-sm font-bold text-white">${data.bank_name}</p>
+                    </div>` : ''}
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Status</p>
+                        <p class="text-sm font-black uppercase text-primary">${data.status}</p>
+                    </div>
+                    <div>
+                        <p class="text-xs font-black uppercase text-white/50">Platform</p>
+                        <p class="text-sm font-bold text-white">${data.platform_name}</p>
+                    </div>
+                </div>
+                ${data.seller_note ? `
+                <div class="border-t border-white/20 pt-4">
+                    <p class="text-xs font-black uppercase text-white/50">Seller Note</p>
+                    <p class="text-xs font-bold text-white/70 mt-1">${data.seller_note}</p>
+                </div>` : ''}
+                <div class="border-t border-white/20 pt-4">
+                    <p class="text-xs font-bold text-white/40">Requested: ${new Date(data.created_at).toLocaleString()}</p>
+                </div>
+            `;
+            
+            document.getElementById('detailModal').classList.remove('hidden');
+        } catch (e) {
+            alert('Failed to load details');
+        }
+    }
+
+    function closeModal() {
+        document.getElementById('detailModal').classList.add('hidden');
+    }
+
+    async function reviewCashout(cashoutId, action) {
+        const label = action === 'approve' ? 'approve' : 'reject';
+        let notes = '';
+        if (action === 'reject') {
+            notes = prompt('Rejection reason (optional):') || '';
+        }
+        if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} cashout #${cashoutId}?`)) return;
+
+        const formData = new FormData();
+        formData.append('action', action);
+        formData.append('admin_notes', notes);
+
+        try {
+            const resp = await fetch(`/admin-cashout-review/${cashoutId}/`, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': getCookie('faircashier_csrftoken') }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                window.location.reload();
+            } else {
+                alert(data.error || 'Action failed');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    async function bulkApprove() {
+        const ids = getSelectedIds('pending');
+        if (!ids.length) { alert('Select pending cashout requests first'); return; }
+        if (!confirm(`Approve ${ids.length} cashout request(s)?`)) return;
+
+        const formData = new FormData();
+        formData.append('cashout_ids', ids.join(','));
+
+        try {
+            const resp = await fetch('/admin-cashout-bulk-approve/', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': getCookie('faircashier_csrftoken') }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                alert(`Approved: ${data.approved}` + (data.errors.length ? `\nErrors: ${data.errors.join(', ')}` : ''));
+                window.location.reload();
+            } else {
+                alert(data.error || 'Bulk approve failed');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    async function markDisbursed() {
+        const ids = getSelectedIds('approved');
+        if (!ids.length) { alert('Select approved cashout requests first'); return; }
+        
+        const ref = prompt('External payment reference (optional):') || '';
+        if (!confirm(`Mark ${ids.length} cashout(s) as disbursed?\n\nThis will deduct funds from seller wallets.`)) return;
+
+        const formData = new FormData();
+        formData.append('cashout_ids', ids.join(','));
+        formData.append('external_reference', ref);
+
+        try {
+            const resp = await fetch('/admin-cashout-disburse/', {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': getCookie('faircashier_csrftoken') }
+            });
+            const data = await resp.json();
+            if (data.success) {
+                alert(`Disbursed: ${data.disbursed}\nTotal: ${parseFloat(data.total_amount).toLocaleString()} UGX` + 
+                      (data.errors.length ? `\nErrors: ${data.errors.join(', ')}` : ''));
+                window.location.reload();
+            } else {
+                alert(data.error || 'Disbursement failed');
+            }
+        } catch (e) {
+            alert('Network error');
+        }
+    }
+
+    // Close modal on escape
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    </script>
+</body>
+</html>

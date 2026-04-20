@@ -1,0 +1,356 @@
+<!-- templates/seller_request_cashout.html -->
+{% extends 'buyer_seller_base.html' %}
+ 
+{% block title %}Request Cashout - Fair Cashier{% endblock %}
+ 
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">request_quote</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Request Cashout</h1>
+        <p class="text-sm text-white/70 font-bold uppercase mt-2">Submit for admin review</p>
+    </div>
+ 
+    <!-- Balance Display -->
+    <div class="border-2 border-white mb-6">
+ 
+        <!-- Free (withdrawable) — primary call-out -->
+        <div class="bg-primary p-4 border-b-2 border-white">
+            <div class="flex justify-between items-center">
+                <div>
+                    <span class="text-xs font-black uppercase text-black/70 block">Free / Withdrawable</span>
+                    <span class="text-2xs font-bold text-black/50">Available for cashout</span>
+                </div>
+                <span class="text-2xl font-black text-black" id="freeBalanceDisplay">
+                    {{ free_balance|floatformat:0 }} UGX
+                </span>
+            </div>
+        </div>
+ 
+        <!-- Total & Reserved — secondary info -->
+        <div class="grid grid-cols-2 divide-x-2 divide-white/20">
+            <div class="p-3 text-center">
+                <p class="text-xs font-black uppercase text-white/50 mb-0.5">Total Balance</p>
+                <p class="text-sm font-black text-white">{{ wallet_balance|floatformat:0 }} UGX</p>
+            </div>
+            <div class="p-3 text-center">
+                <p class="text-xs font-black uppercase text-white/50 mb-0.5">Reserved / Escrow</p>
+                <p class="text-sm font-black text-white/60">{{ reserved_balance|floatformat:0 }} UGX</p>
+            </div>
+        </div>
+ 
+        {% if reserved_balance > 0 %}
+        <div class="border-t border-white/20 px-4 py-2 bg-white/5">
+            <p class="text-xs font-bold text-white/50 text-center">
+                🔒 {{ reserved_balance|floatformat:0 }} UGX is held in escrow
+                and will be released when buyers confirm delivery.
+            </p>
+        </div>
+        {% endif %}
+    </div>
+ 
+    {% if pending_requests %}
+    <!-- Pending Requests -->
+    <div class="border-2 border-white mb-6">
+        <div class="bg-white p-3 border-b-2 border-black">
+            <p class="text-xs font-black uppercase text-black">Pending Requests</p>
+        </div>
+        <div class="divide-y-2 divide-white/10">
+            {% for req in pending_requests %}
+            <div class="p-3 flex justify-between items-center">
+                <div>
+                    <p class="text-xs font-black text-white">{{ req.amount|floatformat:0 }} UGX</p>
+                    <p class="text-xs font-bold text-white/50">{{ req.get_payment_method_display }}</p>
+                </div>
+                <span class="text-xs font-black uppercase
+                    {% if req.status == 'pending' %}text-white
+                    {% elif req.status == 'approved' %}text-primary{% endif %}">
+                    {{ req.get_status_display }}
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+ 
+    <!-- Cashout Request Form -->
+    <form id="cashoutRequestForm" class="space-y-6">
+        <input type="hidden" name="email" value="{{ email }}"/>
+        <input type="hidden" name="platform_id" value="{{ platform_id }}"/>
+ 
+        <!-- Amount -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Amount (UGX)
+            </label>
+            <input
+                type="number" id="amount" name="amount"
+                min="5000" step="100" placeholder="Enter amount"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            />
+            <p class="text-xs font-bold text-white/50 mt-1">
+                Minimum 5,000 UGX · Max withdrawable:
+                <span class="text-primary">{{ free_balance|floatformat:0 }} UGX</span>
+            </p>
+        </div>
+ 
+        <!-- Payment Method -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Payment Method
+            </label>
+            <select
+                id="payment_method" name="payment_method"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                required
+            >
+                <option value="">-- Select Method --</option>
+                <option value="mtn_mobile_money">MTN Mobile Money</option>
+                <option value="airtel_mobile_money">Airtel Money</option>
+                <option value="bank_transfer">Bank Transfer</option>
+            </select>
+        </div>
+ 
+        <!-- Mobile Money Fields -->
+        <div id="mobileMoneyFields" class="hidden space-y-4">
+            <div>
+                <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                    Mobile Money Number
+                </label>
+                <input
+                    type="tel" id="phone_number" name="phone_number"
+                    placeholder="256700000000"
+                    class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                />
+                <p class="text-xs font-bold text-white/50 mt-1">Format: 256XXXXXXXXX</p>
+            </div>
+            <div>
+                <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                    Recipient Name
+                </label>
+                <input
+                    type="text" id="recipient_name" name="recipient_name"
+                    placeholder="Full name on mobile money account"
+                    class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                />
+            </div>
+        </div>
+ 
+        <!-- Bank Transfer Fields -->
+        <div id="bankFields" class="hidden space-y-4">
+            <div>
+                <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                    Bank Name
+                </label>
+                <select
+                    id="bank_name" name="bank_name"
+                    class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                >
+                    <option value="">-- Select Bank --</option>
+                    <option value="Stanbic Bank Uganda">Stanbic Bank Uganda</option>
+                    <option value="Standard Chartered Uganda">Standard Chartered Uganda</option>
+                    <option value="Absa Bank Uganda">Absa Bank Uganda</option>
+                    <option value="DFCU Bank">DFCU Bank</option>
+                    <option value="Centenary Bank">Centenary Bank</option>
+                    <option value="Equity Bank Uganda">Equity Bank Uganda</option>
+                    <option value="Bank of Africa Uganda">Bank of Africa Uganda</option>
+                    <option value="PostBank Uganda">PostBank Uganda</option>
+                    <option value="Housing Finance Bank">Housing Finance Bank</option>
+                    <option value="Finance Trust Bank">Finance Trust Bank</option>
+                    <option value="Opportunity Bank Uganda">Opportunity Bank Uganda</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                    Account Number
+                </label>
+                <input
+                    type="text" id="account_number" name="account_number"
+                    placeholder="Bank account number"
+                    class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                />
+            </div>
+            <div>
+                <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                    Account Name
+                </label>
+                <input
+                    type="text" id="account_name" name="account_name"
+                    placeholder="Full name on bank account"
+                    class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+                />
+            </div>
+        </div>
+ 
+        <!-- Optional Note -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2">
+                Note (Optional)
+            </label>
+            <input
+                type="text" id="seller_note" name="seller_note"
+                placeholder="Any additional info for admin"
+                class="w-full border-2 border-white bg-black text-white p-3 text-sm font-bold focus:border-primary"
+            />
+        </div>
+ 
+        <!-- PIN Entry -->
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN to Confirm
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off" inputmode="numeric"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off" inputmode="numeric"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+ 
+        <!-- Status Message -->
+        <div id="statusMsg" class="hidden border-2 border-white p-3 text-xs font-black uppercase text-center"></div>
+ 
+        <!-- Submit Button -->
+        <button
+            type="submit" id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            Submit Cashout Request
+        </button>
+    </form>
+ 
+    <!-- Info -->
+    <div class="border-2 border-white bg-white p-4 mt-6">
+        <p class="text-xs font-black uppercase tracking-widest text-black mb-2">How it works</p>
+        <ul class="text-xs font-bold text-black/70 space-y-2">
+            <li>1. Submit your cashout request</li>
+            <li>2. Platform admin reviews and approves</li>
+            <li>3. Funds sent to your chosen account</li>
+            <li>4. Amount deducted from your wallet</li>
+        </ul>
+    </div>
+ 
+    <!-- Back Link -->
+    <div class="text-center mt-6">
+        <a href="/payment/seller-dashboard/?email={{ email }}" class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+ 
+{% block scripts %}
+<script>
+// Validate against FREE balance — reserved/escrowed funds cannot be withdrawn
+const FREE_BALANCE     = parseFloat('{{ free_balance|floatformat:2 }}')     || 0;
+const RESERVED_BALANCE = parseFloat('{{ reserved_balance|floatformat:2 }}') || 0;
+ 
+// Toggle payment method fields
+document.getElementById('payment_method').addEventListener('change', function () {
+    document.getElementById('mobileMoneyFields').classList.add('hidden');
+    document.getElementById('bankFields').classList.add('hidden');
+    if (this.value === 'mtn_mobile_money' || this.value === 'airtel_mobile_money') {
+        document.getElementById('mobileMoneyFields').classList.remove('hidden');
+    } else if (this.value === 'bank_transfer') {
+        document.getElementById('bankFields').classList.remove('hidden');
+    }
+});
+ 
+// PIN input auto-focus
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function () {
+        this.value = this.value.replace(/[^0-9]/g, '');
+        if (this.value && index < inputs.length - 1) inputs[index + 1].focus();
+    });
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) inputs[index - 1].focus();
+    });
+    input.addEventListener('keypress', function (e) {
+        if (!/[0-9]/.test(e.key)) e.preventDefault();
+    });
+});
+ 
+// Form submission
+document.getElementById('cashoutRequestForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+ 
+    const pin = ['pin1','pin2','pin3','pin4']
+        .map(id => document.getElementById(id).value).join('');
+ 
+    if (pin.length !== 4) {
+        showStatus('Enter complete PIN', 'error');
+        return;
+    }
+ 
+    const amount = parseFloat(document.getElementById('amount').value);
+    if (!amount || amount < 5000) {
+        showStatus('Minimum cashout is 5,000 UGX', 'error');
+        return;
+    }
+ 
+    // Guard against reserved balance
+    if (amount > FREE_BALANCE) {
+        if (RESERVED_BALANCE > 0) {
+            showStatus(
+                `Amount exceeds free balance. ` +
+                `${Math.round(RESERVED_BALANCE).toLocaleString()} UGX is reserved in escrow ` +
+                `and cannot be withdrawn yet.`,
+                'error'
+            );
+        } else {
+            showStatus('Amount exceeds your available balance', 'error');
+        }
+        return;
+    }
+ 
+    document.getElementById('pin').value = pin;
+ 
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled   = true;
+    submitBtn.textContent = 'Submitting…';
+ 
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: new FormData(this),
+        });
+        const data = await response.json();
+ 
+        if (response.ok && data.success) {
+            showStatus('Request submitted! Awaiting admin review.', 'success');
+            submitBtn.textContent = 'Submitted!';
+            submitBtn.classList.replace('bg-primary', 'bg-white');
+            setTimeout(() => window.location.reload(), 2500);
+        } else {
+            showStatus(data.error || 'Request failed', 'error');
+            clearPinInputs();
+            submitBtn.disabled    = false;
+            submitBtn.textContent = 'Submit Cashout Request';
+        }
+    } catch {
+        showStatus('Network error. Please try again.', 'error');
+        submitBtn.disabled    = false;
+        submitBtn.textContent = 'Submit Cashout Request';
+    }
+});
+ 
+function clearPinInputs() {
+    ['pin1','pin2','pin3','pin4'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('pin1').focus();
+}
+ 
+function showStatus(message, type) {
+    const el = document.getElementById('statusMsg');
+    el.textContent = message;
+    el.classList.remove('hidden', 'bg-white', 'bg-primary');
+    el.classList.add(type === 'error' ? 'bg-white' : 'bg-primary');
+    el.style.color = 'black';
+}
+</script>
+{% endblock %}

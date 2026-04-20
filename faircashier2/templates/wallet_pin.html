@@ -1,0 +1,226 @@
+<!-- templates/wallet_pin.html -->
+{% extends 'buyer_seller_base.html' %}
+
+{% block title %}Wallet - Fair Cashier{% endblock %}
+
+{% block content %}
+<div class="w-full max-w-md">
+    <!-- Header -->
+    <div class="text-center mb-8 border-b-2 border-white pb-6">
+        <div class="bg-primary w-12 h-12 mx-auto mb-4 flex items-center justify-center">
+            <span class="material-symbols-outlined text-black font-black text-2xl">account_balance_wallet</span>
+        </div>
+        <h1 class="text-2xl font-black uppercase tracking-tighter text-white">Wallet</h1>
+    </div>
+
+    <!-- Email Display -->
+    <div class="mb-6 border-2 border-white p-4">
+        <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-1">Account</p>
+        <p class="text-sm font-black text-white">{{ email }}</p>
+    </div>
+
+    <!-- PIN Entry -->
+    <form id="walletForm" class="space-y-6">
+        <input type="hidden" name="email" value="{{ email }}"/>
+        
+        <div>
+            <label class="block text-xs font-black uppercase tracking-widest text-white mb-2 text-center">
+                Enter PIN to View Wallet
+            </label>
+            <div class="flex gap-2 justify-center mb-4">
+                <input type="password" maxlength="1" class="pin-input" id="pin1" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin2" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin3" autocomplete="off"/>
+                <input type="password" maxlength="1" class="pin-input" id="pin4" autocomplete="off"/>
+            </div>
+            <input type="hidden" id="pin" name="pin"/>
+        </div>
+
+        <button 
+            type="submit" 
+            id="submitBtn"
+            class="w-full bg-primary text-black border-2 border-primary py-4 text-sm font-black uppercase hover:bg-white transition-colors"
+        >
+            View Wallet
+        </button>
+    </form>
+
+    <!-- Wallet Display (Hidden Initially) -->
+    <div id="walletDisplay" class="hidden space-y-6 mt-6">
+        <!-- Balance -->
+        <div class="border-2 border-white p-6">
+            <p class="text-xs font-black uppercase tracking-widest text-white/70 mb-4 text-center">Wallet Balance</p>
+
+            <!-- Total -->
+            <div class="text-center mb-4">
+                <p class="text-4xl font-black text-primary" id="balance">0.00</p>
+                <p class="text-xs font-bold text-white/70 uppercase mt-1" id="currency">UGX</p>
+                <p class="text-xs text-white/40 mt-0.5">Total Balance</p>
+            </div>
+
+            <!-- Free / Reserved split -->
+            <div class="grid grid-cols-2 gap-3 border-t border-white/20 pt-4">
+                <!-- Free balance -->
+                <div class="border border-white/30 p-3 text-center">
+                    <p class="text-xs font-black uppercase tracking-widest text-white/50 mb-1">Free</p>
+                    <p class="text-xl font-black text-primary" id="freeBalance">0.00</p>
+                    <p class="text-xs text-white/40 mt-0.5">Withdrawable</p>
+                </div>
+                <!-- Reserved balance -->
+                <div class="border border-white/30 p-3 text-center">
+                    <p class="text-xs font-black uppercase tracking-widest text-white/50 mb-1">Reserved</p>
+                    <p class="text-xl font-black text-white/60" id="reservedBalance">0.00</p>
+                    <p class="text-xs text-white/40 mt-0.5">Pending delivery</p>
+                </div>
+            </div>
+
+            <!-- Reserved balance explanation (shown only when reserved > 0) -->
+            <div id="reservedNote" class="hidden mt-3 border border-white/20 bg-white/5 p-2 text-xs text-white/50 text-center">
+                🔒 Reserved funds are held in escrow until buyers confirm delivery.
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="grid grid-cols-2 gap-4">
+            <a href="/deposit-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-2xl mb-2">arrow_downward</span>
+                    <p class="text-xs font-black uppercase">Deposit</p>
+                </div>
+            </a>
+            <a href="/cashout-pin/?email={{ email }}" class="block">
+                <div class="border-2 border-white p-4 text-center hover:bg-white hover:text-black transition-colors">
+                    <span class="material-symbols-outlined text-2xl mb-2">arrow_upward</span>
+                    <p class="text-xs font-black uppercase">Cashout</p>
+                </div>
+            </a>
+        </div>
+
+        <!-- Recent Transactions -->
+        <div class="border-2 border-white">
+            <div class="bg-white p-3 border-b-2 border-black">
+                <p class="text-xs font-black uppercase text-black">Recent Transactions</p>
+            </div>
+            <div id="transactions" class="p-4 space-y-2">
+                <p class="text-xs font-bold text-white/70 text-center">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Message -->
+    <div id="errorMsg" class="hidden border-2 border-white bg-white text-black p-3 text-xs font-black uppercase mt-6"></div>
+    <!-- Back Link -->
+    <div class="text-center mt-6">
+        <a href="/payment/seller-dashboard/?email={{ email }}" class="text-xs font-bold text-primary underline decoration-2 uppercase">
+            ← Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-focus PIN inputs
+document.querySelectorAll('.pin-input').forEach((input, index, inputs) => {
+    input.addEventListener('input', function(e) {
+        if (this.value && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+        if (index === 3 && this.value) {
+            document.getElementById('walletForm').dispatchEvent(new Event('submit'));
+        }
+    });
+    
+    input.addEventListener('keydown', function(e) {
+        if (e.key === 'Backspace' && !this.value && index > 0) {
+            inputs[index - 1].focus();
+        }
+    });
+});
+
+document.getElementById('pin1').focus();
+
+document.getElementById('walletForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const pin = ['pin1', 'pin2', 'pin3', 'pin4']
+        .map(id => document.getElementById(id).value)
+        .join('');
+    
+    if (pin.length !== 4) {
+        showError('Enter complete PIN');
+        return;
+    }
+    
+    document.getElementById('pin').value = pin;
+    
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Verifying...';
+    
+    const formData = new FormData(this);
+    
+    try {
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Display wallet info
+            const totalBal    = parseFloat(data.wallet.balance)          || 0;
+            const reservedBal = parseFloat(data.wallet.reserved_balance) || 0;
+            const freeBal     = totalBal - reservedBal;
+
+            document.getElementById('balance').textContent         = totalBal.toLocaleString();
+            document.getElementById('currency').textContent        = data.wallet.currency;
+            document.getElementById('freeBalance').textContent     = freeBal.toLocaleString();
+            document.getElementById('reservedBalance').textContent = reservedBal.toLocaleString();
+
+            if (reservedBal > 0) {
+                document.getElementById('reservedNote').classList.remove('hidden');
+            }
+            
+            // Display transactions
+            const txDiv = document.getElementById('transactions');
+            if (data.transactions && data.transactions.length > 0) {
+                txDiv.innerHTML = data.transactions.map(tx => `
+                    <div class="flex justify-between text-xs border-b border-white/20 pb-2">
+                        <span class="font-bold text-white">${tx.type.toUpperCase()}</span>
+                        <span class="font-black text-primary">${parseFloat(tx.amount).toLocaleString()}</span>
+                    </div>
+                `).join('');
+            } else {
+                txDiv.innerHTML = '<p class="text-xs font-bold text-white/70 text-center">No transactions yet</p>';
+            }
+            
+            // Show wallet display
+            document.getElementById('walletDisplay').classList.remove('hidden');
+            submitBtn.classList.add('hidden');
+            document.querySelector('form').classList.add('hidden');
+        } else {
+            showError(data.error || 'Invalid PIN');
+            ['pin1', 'pin2', 'pin3', 'pin4'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('pin1').focus();
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'View Wallet';
+        }
+    } catch (error) {
+        showError('Network error');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'View Wallet';
+    }
+});
+
+function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.classList.remove('hidden');
+    setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+}
+</script>
+{% endblock %}
